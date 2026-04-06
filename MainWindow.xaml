@@ -1,0 +1,275 @@
+<ui:FluentWindow x:Class="FilmAnalysis.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:FilmAnalysis"
+        mc:Ignorable="d"
+        Title="Film Analysis" Height="900" Width="1400"
+        WindowStartupLocation="CenterScreen"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica" >
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <!-- TitleBar (Title + Menu) -->
+            <RowDefinition Height="*" />
+            <!-- Main Content -->
+        </Grid.RowDefinitions>
+
+        <!-- Compact Top Header Area (Title + Menu + Window Controls) -->
+        <Grid Grid.Row="0">
+            <!-- 1. Background TitleBar: Handles window dragging and menus -->
+            <ui:TitleBar Title="">
+                <ui:TitleBar.Header>
+                    <Menu Background="Transparent" VerticalAlignment="Center" Margin="10,0,0,0">
+                        <MenuItem Header="_File">
+                            <MenuItem Header="_Open..." Click="Open_Click" />
+                            <Separator />
+                            <MenuItem Header="E_xit" Click="Exit_Click" />
+                        </MenuItem>
+                        <MenuItem Header="_View">
+                            <MenuItem Header="Calibration" Click="MenuSelectCalibration_Click" />
+                            <MenuItem Header="Dicom View" Click="MenuSelectDicom_Click" />
+                        </MenuItem>
+                    </Menu>
+                </ui:TitleBar.Header>
+            </ui:TitleBar>
+
+            <!-- 2. Foreground Title Overlay: Perfectly centered and "click-through" -->
+            <Grid IsHitTestVisible="False">
+                <ui:TextBlock 
+                    Text="Film Dosimetry Analysis" 
+                    FontTypography="Body" 
+                    FontWeight="Bold" 
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+            </Grid>
+        </Grid>
+
+        <!-- Main content -->
+        <TabControl x:Name="MainTabControl" Grid.Row="1" TabStripPlacement="Bottom">
+            <!-- Calibration Tab -->
+            <TabItem Header="Calibration">
+                <Grid Margin="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="350" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="350" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left Stack: Transform, Filters, Dose -->
+                    <TabControl Grid.Column="0" Margin="0,0,10,0" TabStripPlacement="Bottom">
+                        <!-- Tab 1: Transform & Align -->
+                        <TabItem Header="Transform">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Margin="10">
+                                    <TextBlock Text="Alignment Tools" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <ui:Button x:Name="AutoAlignCenterButton" Content="Auto Center" Icon="{ui:SymbolIcon TargetArrow24}" Width="310" Margin="0,0,0,8" Click="AutoCenter_Click" />
+                                    <ui:Button x:Name="ManuallyAlignButton" Content="Manually Align (3-Point)" Icon="{ui:SymbolIcon Cursor24}" Width="310" Margin="0,0,0,8" Click="ManuallyAlign_Click" />
+                                    <ui:Button x:Name="AutoAlignImageButton" Content="Auto Align Image" Icon="{ui:SymbolIcon DrawImage24}" Width="310" Margin="0,0,0,15" Click="AutoAlign_Click" />
+
+                                    <TextBlock Text="Orientation" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <Grid Margin="0,0,0,15">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:Button x:Name="CWButton" Icon="{ui:SymbolIcon ArrowRotateClockwise24}" Grid.Column="0" Width="70" Click="Rotation_Click" ToolTip="Rotate CW 90°" />
+                                        <ui:Button x:Name="CCWButton" Icon="{ui:SymbolIcon ArrowRotateCounterclockwise24}" Grid.Column="1" Width="70" Click="Rotation_Click" ToolTip="Rotate CCW 90°" />
+                                        <ui:Button x:Name="FlipHButton" Icon="{ui:SymbolIcon FlipHorizontal24}" Grid.Column="2" Width="70" Click="Flip_Click" ToolTip="Flip Horizontal" />
+                                        <ui:Button x:Name="FlipVButton" Icon="{ui:SymbolIcon FlipVertical24}" Grid.Column="3" Width="70" Click="Flip_Click" ToolTip="Flip Vertical" />
+                                    </Grid>
+
+                                    <TextBlock Text="Cropping" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <ui:Button x:Name="ManualCropButton" Content="Manual Crop" Icon="{ui:SymbolIcon Crop24}" Width="310" Margin="0,0,0,8" Click="Crop_Click" />
+                                    <ui:Button x:Name="CenterCropButton" Content="Center Crop" Icon="{ui:SymbolIcon CenterHorizontal24}" Width="310" Margin="0,0,0,8" Click="Crop_Click" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <!-- Tab 2: Filters -->
+                        <TabItem Header="Filters">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Margin="10">
+                                    <TextBlock Text="Image Enhancement" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <ui:Button x:Name="MedianFilterButton" Content="Median Filter" Icon="{ui:SymbolIcon FilterSync24}" Width="310" Margin="0,0,0,8" Click="Filter_Click" />
+                                    <ui:Button x:Name="ROIFilterButton" Content="ROI Filter" Icon="{ui:SymbolIcon FilterSync24}" Width="310" Margin="0,0,0,8" Click="Filter_Click" />
+                                    <ui:Button x:Name="NoiseFilterButton" Content="Noise Filter" Icon="{ui:SymbolIcon ShieldCheckmark24}" Width="310" Margin="0,0,0,15" Click="Filter_Click" />
+
+                                    <TextBlock Text="Smoothing &amp; Interpolation" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <TextBlock Text="Smoothing Method" Margin="0,0,0,5" />
+                                    <ComboBox x:Name="SmoothDropDown" Width="310" Margin="0,0,0,8" />
+                                    <ui:Button x:Name="SmoothButton" Content="Apply Smooth" Icon="{ui:SymbolIcon Cube24}" Width="310" Margin="0,0,0,15" Click="Filter_Click" />
+
+                                    <TextBlock Text="Interpolation Method" Margin="0,0,0,5" />
+                                    <ComboBox x:Name="InterpolationDropDown" Width="310" Margin="0,0,0,8" />
+                                    <ui:Button x:Name="InterpButton" Content="Apply Interpolation" Icon="{ui:SymbolIcon DrawImage24}" Width="310" Click="Filter_Click" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <!-- Tab 3: Dose & Tools -->
+                        <TabItem Header="Dose &amp; Tools">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Margin="10">
+                                    <TextBlock Text="Dose Conversion" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <ui:Button x:Name="ConvertToDoseButton" Content="Convert to Dose" Icon="{ui:SymbolIcon Calculator24}" Background="{DynamicResource AccentFillColorDefaultBrush}" Width="310" Margin="0,0,0,8" Click="ConvertToDose_Click" />
+                                    <ui:Button x:Name="UpdateFilmDoseButton" Content="Update Film Dose" Icon="{ui:SymbolIcon ArrowSync24}" Width="310" Margin="0,0,0,15" Click="ConvertToDose_Click" />
+
+                                    <TextBlock Text="Visual Tools" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <TextBlock Text="Contrast Adjustment" Margin="0,0,0,5" />
+                                    <Slider x:Name="ContrastSlider" Width="310" Margin="0,0,0,15" Minimum="0" Maximum="255" Value="128" />
+
+                                    <TextBlock Text="Measurement Tools" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <ui:Button x:Name="ROIDoseButton" Content="ROI Dose" Icon="{ui:SymbolIcon DrawShape24}" Width="310" Margin="0,0,0,8" Click="Measurement_Click" />
+                                    <ui:Button x:Name="DistanceButton" Content="Distance / Line" Icon="{ui:SymbolIcon Line24}" Width="310" Margin="0,0,0,8" Click="Measurement_Click" />
+                                    <ui:Button x:Name="AreaButton" Content="Area Measurement" Icon="{ui:SymbolIcon DocumentTable24}" Width="310" Margin="0,0,0,15" Click="Measurement_Click" />
+
+                                    <TextBlock Text="Color Map" FontWeight="Bold" Margin="0,0,0,5" />
+                                    <TextBlock Text="Active Color Map" Margin="0,0,0,5" />
+                                    <ComboBox x:Name="ColorMapDropDown" Width="310" Margin="0,0,0,8" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
+
+                    <!-- Main Display (Centered) -->
+                    <Border x:Name="MainDisplay" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="10" CornerRadius="8" Margin="10,0,10,0">
+                        <Grid>
+                            <Image x:Name="MainDisplayImage" Stretch="Uniform" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Right Stack: DataGrid and Profiles -->
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" /> <!-- TabControl Area -->
+                            <RowDefinition Height="*" />    <!-- DataGrid Area (Fluid) -->
+                            <RowDefinition Height="Auto" /> <!-- Profile Y -->
+                            <RowDefinition Height="Auto" /> <!-- Profile X -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Processing Tabs Area -->
+                        <TabControl Grid.Row="0" Margin="0,0,0,10" TabStripPlacement="Top">
+                            <!-- Tab 1: Current Configuration (Loading/Status) -->
+                            <TabItem Header="Current Config">
+                                <Grid Margin="10">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Config Selection -->
+                                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Config:" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <ComboBox x:Name="ConfigComboBox" Grid.Column="1" Height="38" HorizontalAlignment="Stretch" Margin="0,0,8,0" />
+                                        <ui:Button x:Name="RefreshConfigButton" Grid.Column="2" Icon="{ui:SymbolIcon ArrowSync24}" Width="42" Height="38" Click="RefreshConfigButton_Click" ToolTip="Reload Configurations" />
+                                    </Grid>
+
+                                    <!-- Info Display -->
+                                    <Border Grid.Row="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="4" Padding="8">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <TextBlock x:Name="CalibrationInfoText" Text="Select a configuration to view details." TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        </ScrollViewer>
+                                    </Border>
+
+                                    <!-- Status -->
+                                    <Border x:Name="StatusIndicator" Grid.Row="2" Margin="0,8,0,0" Padding="8,4" CornerRadius="4" Background="#FFFF4500">
+                                        <TextBlock x:Name="StatusText" Text="Not Ready!" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" />
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+
+                            <!-- Tab 2: Generate New Fit (4-Row Layout) -->
+                            <TabItem Header="Create New Fit">
+                                <Grid Margin="15,10">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" /> <!-- 1. Channel -->
+                                        <RowDefinition Height="Auto" /> <!-- 2. Degree -->
+                                        <RowDefinition Height="Auto" /> <!-- 3. Actions -->
+                                        <RowDefinition Height="Auto" /> <!-- 4. R2 -->
+                                    </Grid.RowDefinitions>
+
+                                    <!-- 1. Channel Dropdown -->
+                                    <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                                        <TextBlock Text="Channel Logic" FontWeight="Bold" Margin="0,0,0,4" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <ComboBox x:Name="ChannelFitDropDown" HorizontalAlignment="Stretch" Height="38" FontSize="9">
+                                            <ComboBoxItem Content="Single: Red" IsSelected="True" />
+                                            <ComboBoxItem Content="Single: Green" />
+                                            <ComboBoxItem Content="Single: Blue" />
+                                            <ComboBoxItem Content="Dual: Red/Blue" />
+                                            <ComboBoxItem Content="Dual: Green/Blue" />
+                                            <ComboBoxItem Content="Triple: Red|Green|Blue" />
+                                        </ComboBox>
+                                    </StackPanel>
+
+                                    <!-- 2. Degree Dropdown -->
+                                    <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                                        <TextBlock Text="Polynomial Degree" FontWeight="Bold" Margin="0,0,0,4" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <ComboBox x:Name="DegreeFitDropDown" HorizontalAlignment="Stretch" Height="35">
+                                            <ComboBoxItem Content="Degree 1" />
+                                            <ComboBoxItem Content="Degree 2" />
+                                            <ComboBoxItem Content="Degree 3" IsSelected="True" />
+                                            <ComboBoxItem Content="Degree 4" />
+                                            <ComboBoxItem Content="Degree 5" />
+                                        </ComboBox>
+                                    </StackPanel>
+
+                                    <!-- 3. Actions (Fit & Save) -->
+                                    <Grid Grid.Row="2" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:Button x:Name="FitButton" Content="Calculate Fit" Icon="{ui:SymbolIcon Calculator24}" Grid.Column="0" HorizontalAlignment="Stretch" Margin="0,0,4,0" Height="34" Click="FitButton_Click" Background="{DynamicResource AccentFillColorSecondaryBrush}"/>
+                                        <ui:Button x:Name="SaveButton" Content="Save Config" Icon="{ui:SymbolIcon Save24}" Grid.Column="1" HorizontalAlignment="Stretch" Margin="4,0,0,0" Height="34" Click="SaveButton_Click" />
+                                    </Grid>
+
+                                    <!-- 4. R2 Feedback -->
+                                    <Border Grid.Row="3" Background="{DynamicResource ControlFillColorSecondaryBrush}" Padding="15,6" CornerRadius="4">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <TextBlock Text="Goodness of Fit (R²): " VerticalAlignment="Center" />
+                                            <TextBlock x:Name="RSquaredText" Text="0.0000" FontWeight="Bold" VerticalAlignment="Center" Foreground="{DynamicResource AccentFillColorDefaultBrush}" FontSize="14" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+                        </TabControl>
+
+                        <ui:DataGrid x:Name="CalibrationGrid" Grid.Row="1" d:ItemsSource="{d:SampleData ItemCount=5}" Margin="0,0,0,10" SelectionChanged="DataGrid_SelectionChanged" />
+
+                        <Border x:Name="ProfileY" Grid.Row="2" Height="150" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="5" CornerRadius="8" Margin="0,0,0,10">
+                            <TextBlock Text="Profile Y" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        </Border>
+
+                        <Border x:Name="ProfileX" Grid.Row="3" Height="150" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="5" CornerRadius="8" Margin="0,0,0,0">
+                            <TextBlock Text="Profile X" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        </Border>
+
+                        <Image x:Name="CalibrationImage_Copy1" Grid.Row="1" Width="100" Height="100" HorizontalAlignment="Right" VerticalAlignment="Top" Stretch="Uniform" Margin="10" />
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- Dicom View Tab -->
+            <TabItem Header="Dicom View">
+                <Grid Margin="12">
+                    <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="20">Dicom View content placeholder</TextBlock>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</ui:FluentWindow>
+
