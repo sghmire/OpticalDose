@@ -13,36 +13,44 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <!-- TitleBar (Title + Menu) -->
-            <RowDefinition Height="*" />
-            <!-- Main Content -->
+            <RowDefinition Height="38" /> <!-- Stable Header (Fixes clipping) -->
+            <RowDefinition Height="*" />  <!-- Main Content (Expanded) -->
+            <RowDefinition Height="34" /> <!-- Stable Footer -->
         </Grid.RowDefinitions>
 
         <!-- Compact Top Header Area (Title + Menu + Window Controls) -->
-        <Grid Grid.Row="0">
+        <Grid Grid.Row="0" Background="Transparent">
             <!-- 1. Background TitleBar: Handles window dragging and menus -->
-            <ui:TitleBar Title="">
+            <ui:TitleBar Title="" Height="38" Background="Transparent" Padding="0,4,0,4">
                 <ui:TitleBar.Header>
-                    <Menu Background="Transparent" VerticalAlignment="Center" Margin="10,0,0,0">
-                        <MenuItem Header="_File">
+                    <Menu Background="Transparent" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11">
+                        <Menu.ItemContainerStyle>
+                            <Style TargetType="MenuItem">
+                                <Setter Property="Padding" Value="10,0"/>
+                                <Setter Property="MinHeight" Value="28"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Setter Property="Foreground" Value="#FF000000"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                            </Style>
+                        </Menu.ItemContainerStyle>
+                        <MenuItem Header="_File" Padding="5,0,5,0" Height="45">
                             <MenuItem Header="_Open..." Click="Open_Click" />
                             <Separator />
                             <MenuItem Header="E_xit" Click="Exit_Click" />
                         </MenuItem>
-                        <MenuItem Header="_View">
+                        <MenuItem Header="_View" Height="45">
                             <MenuItem Header="Calibration" Click="MenuSelectCalibration_Click" />
                             <MenuItem Header="Dicom View" Click="MenuSelectDicom_Click" />
                         </MenuItem>
                     </Menu>
                 </ui:TitleBar.Header>
             </ui:TitleBar>
-
-            <!-- 2. Foreground Title Overlay: Perfectly centered and "click-through" -->
+            
+            <!-- 2. Foreground Title Overlay: Dynamic Contrast -->
             <Grid IsHitTestVisible="False">
                 <ui:TextBlock 
                     Text="Film Dosimetry Analysis" 
-                    FontTypography="Body" 
+                    FontTypography="Caption" 
                     FontWeight="Bold" 
                     VerticalAlignment="Center"
                     HorizontalAlignment="Center"
@@ -50,8 +58,13 @@
             </Grid>
         </Grid>
 
-        <!-- Main content -->
-        <TabControl x:Name="MainTabControl" Grid.Row="1" TabStripPlacement="Bottom">
+        <!-- Main content (Now headerless) -->
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Background="Transparent" BorderThickness="0" Margin="10">
+            <TabControl.ItemContainerStyle>
+                <Style TargetType="TabItem">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </Style>
+            </TabControl.ItemContainerStyle>
             <!-- Calibration Tab -->
             <TabItem Header="Calibration">
                 <Grid Margin="12">
@@ -119,6 +132,7 @@
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Margin="10">
                                     <TextBlock Text="Dose Conversion" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <ui:Button x:Name="ExtractROIButton" Content="Extract ROI" Icon="{ui:SymbolIcon DrawShape24}" Width="310" Margin="0,0,0,8" Click="ExtractROI_Click" ToolTip="Select region and extract RGB intensities" />
                                     <ui:Button x:Name="ConvertToDoseButton" Content="Convert to Dose" Icon="{ui:SymbolIcon Calculator24}" Background="{DynamicResource AccentFillColorDefaultBrush}" Width="310" Margin="0,0,0,8" Click="ConvertToDose_Click" />
                                     <ui:Button x:Name="UpdateFilmDoseButton" Content="Update Film Dose" Icon="{ui:SymbolIcon ArrowSync24}" Width="310" Margin="0,0,0,15" Click="ConvertToDose_Click" />
 
@@ -141,18 +155,25 @@
 
                     <!-- Main Display (Centered) -->
                     <Border x:Name="MainDisplay" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="10" CornerRadius="8" Margin="10,0,10,0">
-                        <Grid>
-                            <Image x:Name="MainDisplayImage" Stretch="Uniform" />
+                        <Grid x:Name="ImageGrid">
+                            <Image x:Name="MainDisplayImage" Stretch="Uniform" MouseDown="Image_MouseDown" MouseMove="Image_MouseMove" MouseUp="Image_MouseUp" />
+                            <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False" Background="Transparent">
+                                <Rectangle x:Name="SelectionRect" Stroke="Red" StrokeThickness="2" Visibility="Collapsed" />
+                            </Canvas>
                         </Grid>
                     </Border>
 
                     <!-- Right Stack: DataGrid and Profiles -->
                     <Grid Grid.Column="2">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" /> <!-- TabControl Area -->
-                            <RowDefinition Height="*" />    <!-- DataGrid Area (Fluid) -->
-                            <RowDefinition Height="Auto" /> <!-- Profile Y -->
-                            <RowDefinition Height="Auto" /> <!-- Profile X -->
+                            <RowDefinition Height="Auto" />
+                            <!-- TabControl Area -->
+                            <RowDefinition Height="*" />
+                            <!-- DataGrid Area (Fluid) -->
+                            <RowDefinition Height="Auto" />
+                            <!-- Profile Y -->
+                            <RowDefinition Height="Auto" />
+                            <!-- Profile X -->
                         </Grid.RowDefinitions>
 
                         <!-- Processing Tabs Area -->
@@ -196,10 +217,14 @@
                             <TabItem Header="Create New Fit">
                                 <Grid Margin="15,10">
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" /> <!-- 1. Channel -->
-                                        <RowDefinition Height="Auto" /> <!-- 2. Degree -->
-                                        <RowDefinition Height="Auto" /> <!-- 3. Actions -->
-                                        <RowDefinition Height="Auto" /> <!-- 4. R2 -->
+                                        <RowDefinition Height="Auto" />
+                                        <!-- 1. Channel -->
+                                        <RowDefinition Height="Auto" />
+                                        <!-- 2. Degree -->
+                                        <RowDefinition Height="Auto" />
+                                        <!-- 3. Actions -->
+                                        <RowDefinition Height="Auto" />
+                                        <!-- 4. R2 -->
                                     </Grid.RowDefinitions>
 
                                     <!-- 1. Channel Dropdown -->
@@ -270,6 +295,33 @@
                 </Grid>
             </TabItem>
         </TabControl>
+
+        <!-- Professional Micro-Nav Bar -->
+        <Border Grid.Row="2" Background="Transparent" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Padding="0,2">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <ui:Button x:Name="NavCalibrationButton" 
+                          Content="Calibration" 
+                          Icon="{ui:SymbolIcon AppGeneric24}" 
+                          Width="135" 
+                          Height="40" 
+                          FontSize="9"
+                          VerticalContentAlignment="Center"
+                          Margin="5,0"
+                          Appearance="Primary"
+                          Click="MenuSelectCalibration_Click" />
+
+                <ui:Button x:Name="NavDicomButton" 
+                          Content="Dicom View" 
+                          Icon="{ui:SymbolIcon ImageMultiple24}" 
+                          Width="135" 
+                          Height="40" 
+                          FontSize="9"
+                          VerticalContentAlignment="Center"
+                          Margin="5,0"
+                          Appearance="Secondary"
+                          Click="MenuSelectDicom_Click" />
+            </StackPanel>
+        </Border>
     </Grid>
 </ui:FluentWindow>
 

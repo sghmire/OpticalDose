@@ -31,6 +31,10 @@ namespace FilmAnalysis
         public ObservableCollection<CalibrationPoint> CalibrationPoints { get; set; }
         public CalibrationConfig CurrentConfig { get; set; }
 
+        private bool _isSelectingROI = false;
+        private bool _isDrawing = false;
+        private Point _startPoint;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -118,12 +122,18 @@ namespace FilmAnalysis
 
         private void MenuSelectCalibration_Click(object sender, RoutedEventArgs e)
         {
+            if (MainTabControl == null) return;
             MainTabControl.SelectedIndex = 0;
+            if (NavCalibrationButton != null) NavCalibrationButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
+            if (NavDicomButton != null) NavDicomButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
         }
 
         private void MenuSelectDicom_Click(object sender, RoutedEventArgs e)
         {
+            if (MainTabControl == null) return;
             MainTabControl.SelectedIndex = 1;
+            if (NavCalibrationButton != null) NavCalibrationButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+            if (NavDicomButton != null) NavDicomButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
         }
 
         private void RefreshConfigButton_Click(object sender, RoutedEventArgs e)
@@ -233,6 +243,120 @@ namespace FilmAnalysis
         private void Crop_Click(object sender, RoutedEventArgs e) { }
         private void Filter_Click(object sender, RoutedEventArgs e) { }
         private void ConvertToDose_Click(object sender, RoutedEventArgs e) { }
+        private void ExtractROI_Click(object sender, RoutedEventArgs e)
+        {
+            _isSelectingROI = true;
+            System.Windows.MessageBox.Show("Click and Drag on the image to select the Region of Interest.", "ROI Selection Mode");
+        }
+
+        private void Image_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (!_isSelectingROI) return;
+
+            _isDrawing = true;
+            _startPoint = e.GetPosition(SelectionCanvas);
+            
+            SelectionRect.Width = 0;
+            SelectionRect.Height = 0;
+            SelectionRect.Visibility = Visibility.Visible;
+            
+            Canvas.SetLeft(SelectionRect, _startPoint.X);
+            Canvas.SetTop(SelectionRect, _startPoint.Y);
+        }
+
+        private void Image_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (!_isDrawing) return;
+
+            Point currentPoint = e.GetPosition(SelectionCanvas);
+            
+            double x = Math.Min(currentPoint.X, _startPoint.X);
+            double y = Math.Min(currentPoint.Y, _startPoint.Y);
+            double w = Math.Abs(currentPoint.X - _startPoint.X);
+            double h = Math.Abs(currentPoint.Y - _startPoint.Y);
+
+            SelectionRect.Width = w;
+            SelectionRect.Height = h;
+            Canvas.SetLeft(SelectionRect, x);
+            Canvas.SetTop(SelectionRect, y);
+        }
+
+        private void Image_MouseUp(object sender, MouseButtonEventArgs e)
+        {
+            if (!_isDrawing) return;
+            _isDrawing = false;
+            _isSelectingROI = false;
+            SelectionRect.Visibility = Visibility.Collapsed;
+
+            // Logic to calculate pixel averages goes here
+            PerformROIExtraction();
+        }
+
+        private void PerformROIExtraction()
+        {
+            if (MainDisplayImage.Source is not BitmapSource bitmapSource) return;
+
+            // 1. Get the actual Pixel coordinates
+            // Map UI coordinates (SelectionCanvas) to Pixel coordinates (BitmapSource)
+            double xRatio = bitmapSource.PixelWidth / MainDisplayImage.ActualWidth;
+            double yRatio = bitmapSource.PixelHeight / MainDisplayImage.ActualHeight;
+
+            double x = Canvas.GetLeft(SelectionRect) * xRatio;
+            double y = Canvas.GetTop(SelectionRect) * yRatio;
+            double w = SelectionRect.Width * xRatio;
+            double h = SelectionRect.Height * yRatio;
+
+            Int32Rect region = new Int32Rect((int)x, (int)y, (int)Math.Max(1, w), (int)Math.Max(1, h));
+
+            try
+            {
+                // 2. Extract Pixel Data
+                int stride = (region.Width * bitmapSource.Format.BitsPerPixel + 7) / 8;
+                byte[] pixels = new byte[region.Height * stride];
+                bitmapSource.CopyPixels(region, pixels, stride, 0);
+
+                // 3. Simple Mean Analysis (assuming 8-bit or 16nd-bit interleaved)
+                double sumR = 0, sumG = 0, sumB = 0;
+                int count = 0;
+
+                // Support Bgr24/Bgr32 formats which are common in WPF
+                int bytesPerPixel = bitmapSource.Format.BitsPerPixel / 8;
+                for (int i = 0; i < pixels.Length; i += bytesPerPixel)
+                {
+                    if (bitmapSource.Format == PixelFormats.Bgr24 || bitmapSource.Format == PixelFormats.Bgr32)
+                    {
+                        sumB += pixels[i];
+                        sumG += pixels[i + 1];
+                        sumR += pixels[i + 2];
+                        count++;
+                    }
+                }
+
+                if (count > 0)
+                {
+                    double avgR = sumR / count;
+                    double avgG = sumG / count;
+                    double avgB = sumB / count;
+
+                    // 4. Update the Calibration List
+                    // We'll prompt for the dose value or use 0 as default
+                    var newPoint = new CalibrationPoint 
+                    { 
+                        Dose = 0, 
+                        Red = (int)avgR, 
+                        Green = (int)avgG, 
+                        Blue = (int)avgB 
+                    };
+                    CalibrationPoints.Add(newPoint);
+                    
+                    System.Windows.MessageBox.Show($"Extracted Means:\nR: {avgR:F1}\nG: {avgG:F1}\nB: {avgB:F1}", "ROI Extraction Result");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error during pixel sampling: {ex.Message}", "Sampling Error");
+            }
+        }
         private void Measurement_Click(object sender, RoutedEventArgs e) { }
     }
 }
