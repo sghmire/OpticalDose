@@ -12,6 +12,8 @@ using Wpf.Ui.Controls;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
 using System.Linq;
+using BitMiracle.LibTiff.Classic;
+using System.Runtime.InteropServices;
 
 namespace FilmAnalysis
 {
@@ -34,6 +36,13 @@ namespace FilmAnalysis
         private bool _isSelectingROI = false;
         private bool _isDrawing = false;
         private Point _startPoint;
+
+        // Raw High-Precision Image Data
+        private double[,] _redChannel;
+        private double[,] _greenChannel;
+        private double[,] _blueChannel;
+        private int _imgWidth, _imgHeight;
+        private double _tiffDpi = 72; // Default DPI
 
         public MainWindow()
         {
@@ -106,13 +115,184 @@ namespace FilmAnalysis
             {
                 try
                 {
-                    MainDisplayImage.Source = new BitmapImage(new Uri(dlg.FileName));
+                    var uri = new Uri(dlg.FileName);
+                    var bitmap = new BitmapImage(uri);
+                    MainDisplayImage.Source = bitmap;
+                    
+                    // Update Metadata
+                    UpdateImageMetadata(dlg.FileName, bitmap.PixelWidth, bitmap.PixelHeight, 72.0); // Default DPI for standard images
+
+                    // Clear raw high-precision data if standard image is loaded
+                    _redChannel = null;
+                    _greenChannel = null;
+                    _blueChannel = null;
                 }
                 catch
                 {
                     System.Windows.MessageBox.Show("Unable to load the selected image.", "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
                 }
             }
+        }
+
+        private void LoadRawFilm_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog();
+            dlg.Filter = "TIFF files|*.tif;*.tiff|All files|*.*";
+            var result = dlg.ShowDialog();
+            if (result == true)
+            {
+                try
+                {
+                    ReadTiffData(dlg.FileName);
+                    
+                    // Update Metadata (DPI and Size are updated inside ReadTiffData or here)
+                    long fileSize = new System.IO.FileInfo(dlg.FileName).Length;
+                    MetaFileName.Text = System.IO.Path.GetFileName(dlg.FileName);
+                    MetaImageSize.Text = $"{_imgWidth} x {_imgHeight}";
+                    MetaDPI.Text = _tiffDpi.ToString("F1");
+                    MetaFileSize.Text = $"{(fileSize / 1024.0 / 1024.0):F2} MB";
+
+                    StatusText.Text = "Raw Film Loaded!";
+                    StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"Unable to load the raw TIFF: {ex.Message}", "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void UpdateImageMetadata(string filePath, int width, int height, double dpi)
+        {
+            var fileInfo = new System.IO.FileInfo(filePath);
+            MetaFileName.Text = fileInfo.Name;
+            MetaImageSize.Text = $"{width} x {height}";
+            MetaDPI.Text = dpi.ToString("F1");
+            MetaFileSize.Text = $"{(fileInfo.Length / 1024.0 / 1024.0):F2} MB";
+        }
+
+        private void ReadTiffData(string filePath)
+        {
+            using (Tiff image = Tiff.Open(filePath, "r"))
+            {
+                if (image == null) throw new Exception("Could not open TIFF file.");
+
+                FieldValue[] res = image.GetField(TiffTag.IMAGEWIDTH);
+                _imgWidth = res[0].ToInt();
+
+                res = image.GetField(TiffTag.IMAGELENGTH);
+                _imgHeight = res[0].ToInt();
+
+                res = image.GetField(TiffTag.BITSPERSAMPLE);
+                short bitsPerSample = res[0].ToShort();
+
+                res = image.GetField(TiffTag.SAMPLESPERPIXEL);
+                short samplesPerPixel = res[0].ToShort();
+
+                // DPI extraction
+                res = image.GetField(TiffTag.XRESOLUTION);
+                if (res != null)
+                {
+                    float xRes = res[0].ToFloat();
+                    res = image.GetField(TiffTag.RESOLUTIONUNIT);
+                    short unit = (res != null) ? res[0].ToShort() : (short)2; // 2 = Inch
+
+                    if (unit == 3) // Centimeter
+                        _tiffDpi = xRes * 2.54;
+                    else
+                        _tiffDpi = xRes;
+                }
+
+                _redChannel = new double[_imgHeight, _imgWidth];
+                _greenChannel = new double[_imgHeight, _imgWidth];
+                _blueChannel = new double[_imgHeight, _imgWidth];
+
+                int[] raster = new int[_imgWidth * _imgHeight];
+                if (!image.ReadRGBAImage(_imgWidth, _imgHeight, raster))
+                {
+                    throw new Exception("ReadRGBAImage failed.");
+                }
+
+                // LibTiff ReadRGBAImage returns pixels in a bottom-up raster
+                // with ABGR format in a 32-bit int.
+                // However, for high-precision dosimetry we often want the raw 16-bit values if available.
+                // ReadRGBAImage always converts to 8-bit per channel.
+                
+                // If the user wants 16-bit (no information loss), we should read scanlines instead.
+                
+                if (bitsPerSample == 16)
+                {
+                    byte[] scanline = new byte[image.ScanlineSize()];
+                    for (int row = 0; row < _imgHeight; row++)
+                    {
+                        image.ReadScanline(scanline, row);
+                        for (int col = 0; col < _imgWidth; col++)
+                        {
+                            int offset = col * samplesPerPixel * 2; // 2 bytes per sample
+                            ushort b = BitConverter.ToUInt16(scanline, offset);
+                            ushort g = (samplesPerPixel > 1) ? BitConverter.ToUInt16(scanline, offset + 2) : b;
+                            ushort r = (samplesPerPixel > 2) ? BitConverter.ToUInt16(scanline, offset + 4) : b;
+                            
+                            _redChannel[row, col] = r;
+                            _greenChannel[row, col] = g;
+                            _blueChannel[row, col] = b;
+                        }
+                    }
+                }
+                else
+                {
+                    // 8-bit or other
+                    for (int y = 0; y < _imgHeight; y++)
+                    {
+                        for (int x = 0; x < _imgWidth; x++)
+                        {
+                            int pixel = raster[(_imgHeight - 1 - y) * _imgWidth + x];
+                            _redChannel[y, x] = Tiff.GetR(pixel);
+                            _greenChannel[y, x] = Tiff.GetG(pixel);
+                            _blueChannel[y, x] = Tiff.GetB(pixel);
+                        }
+                    }
+                }
+
+                // Create Display Bitmap (normalized to 8-bit)
+                UpdateDisplayFromRaw();
+            }
+        }
+
+        private void UpdateDisplayFromRaw()
+        {
+            if (_redChannel == null) return;
+
+            int width = _redChannel.GetLength(1);
+            int height = _redChannel.GetLength(0);
+            
+            // Find max for normalization if needed, but usually we just scale 16-bit to 8-bit
+            // Most dosimetry TIFFs are 16-bit.
+            double maxVal = 0;
+            foreach (var v in _redChannel) if (v > maxVal) maxVal = v;
+            foreach (var v in _greenChannel) if (v > maxVal) maxVal = v;
+            foreach (var v in _blueChannel) if (v > maxVal) maxVal = v;
+
+            if (maxVal <= 255) maxVal = 255; // 8-bit
+            else maxVal = 65535; // 16-bit
+
+            byte[] pixels = new byte[width * height * 4]; // BGRA
+            for (int row = 0; row < height; row++)
+            {
+                for (int col = 0; col < width; col++)
+                {
+                    int idx = (row * width + col) * 4;
+                    pixels[idx] = (byte)(_blueChannel[row, col] * 255.0 / maxVal);
+                    pixels[idx + 1] = (byte)(_greenChannel[row, col] * 255.0 / maxVal);
+                    pixels[idx + 2] = (byte)(_redChannel[row, col] * 255.0 / maxVal);
+                    pixels[idx + 3] = 255;
+                }
+            }
+
+            PixelFormat format = PixelFormats.Bgra32;
+            int stride = width * 4;
+            BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, format, null, pixels, stride);
+            MainDisplayImage.Source = bitmap;
         }
 
         private void Exit_Click(object sender, RoutedEventArgs e)
@@ -292,12 +472,12 @@ namespace FilmAnalysis
             PerformROIExtraction();
         }
 
+
         private void PerformROIExtraction()
         {
             if (MainDisplayImage.Source is not BitmapSource bitmapSource) return;
 
             // 1. Get the actual Pixel coordinates
-            // Map UI coordinates (SelectionCanvas) to Pixel coordinates (BitmapSource)
             double xRatio = bitmapSource.PixelWidth / MainDisplayImage.ActualWidth;
             double yRatio = bitmapSource.PixelHeight / MainDisplayImage.ActualHeight;
 
@@ -306,29 +486,54 @@ namespace FilmAnalysis
             double w = SelectionRect.Width * xRatio;
             double h = SelectionRect.Height * yRatio;
 
-            Int32Rect region = new Int32Rect((int)x, (int)y, (int)Math.Max(1, w), (int)Math.Max(1, h));
+            int left = (int)x;
+            int top = (int)y;
+            int width = (int)Math.Max(1, w);
+            int height = (int)Math.Max(1, h);
+
+            // Bounds check
+            if (left < 0) left = 0;
+            if (top < 0) top = 0;
+            if (left + width > bitmapSource.PixelWidth) width = bitmapSource.PixelWidth - left;
+            if (top + height > bitmapSource.PixelHeight) height = bitmapSource.PixelHeight - top;
 
             try
             {
-                // 2. Extract Pixel Data
-                int stride = (region.Width * bitmapSource.Format.BitsPerPixel + 7) / 8;
-                byte[] pixels = new byte[region.Height * stride];
-                bitmapSource.CopyPixels(region, pixels, stride, 0);
-
-                // 3. Simple Mean Analysis (assuming 8-bit or 16nd-bit interleaved)
                 double sumR = 0, sumG = 0, sumB = 0;
                 int count = 0;
 
-                // Support Bgr24/Bgr32 formats which are common in WPF
-                int bytesPerPixel = bitmapSource.Format.BitsPerPixel / 8;
-                for (int i = 0; i < pixels.Length; i += bytesPerPixel)
+                if (_redChannel != null)
                 {
-                    if (bitmapSource.Format == PixelFormats.Bgr24 || bitmapSource.Format == PixelFormats.Bgr32)
+                    // Use High-Precision Raw Data
+                    for (int r = top; r < top + height; r++)
                     {
-                        sumB += pixels[i];
-                        sumG += pixels[i + 1];
-                        sumR += pixels[i + 2];
-                        count++;
+                        for (int c = left; c < left + width; c++)
+                        {
+                            sumR += _redChannel[r, c];
+                            sumG += _greenChannel[r, c];
+                            sumB += _blueChannel[r, c];
+                            count++;
+                        }
+                    }
+                }
+                else
+                {
+                    // Fallback to BitmapSource (already handled in previous version, but let's re-implement for consistency)
+                    Int32Rect region = new Int32Rect(left, top, width, height);
+                    int stride = (region.Width * bitmapSource.Format.BitsPerPixel + 7) / 8;
+                    byte[] pixels = new byte[region.Height * stride];
+                    bitmapSource.CopyPixels(region, pixels, stride, 0);
+
+                    int bytesPerPixel = bitmapSource.Format.BitsPerPixel / 8;
+                    for (int i = 0; i < pixels.Length; i += bytesPerPixel)
+                    {
+                        if (bitmapSource.Format == PixelFormats.Bgr24 || bitmapSource.Format == PixelFormats.Bgr32 || bitmapSource.Format == PixelFormats.Bgra32)
+                        {
+                            sumB += pixels[i];
+                            sumG += pixels[i + 1];
+                            sumR += pixels[i + 2];
+                            count++;
+                        }
                     }
                 }
 
