@@ -45,6 +45,13 @@
                             <MenuItem Header="_Open..." Click="Open_Click" />
                             <MenuItem Header="Load raw film (tif/tif)" Click="LoadRawFilm_Click" />
                             <Separator />
+                            <MenuItem Header="_Import">
+                                <MenuItem Header="Dose Map (*.txt)" Click="ImportDoseMap_Click" />
+                            </MenuItem>
+                            <MenuItem Header="_Export">
+                                <MenuItem Header="Dose Map (*.txt)" Click="ExportDoseMap_Click" />
+                            </MenuItem>
+                            <Separator />
                             <MenuItem Header="_Settings..." Click="Settings_Click" />
                             <Separator />
                             <MenuItem Header="E_xit" Click="Exit_Click" />
@@ -223,16 +230,19 @@
 
                                         <TextBlock Text="Visual Tools" FontWeight="Bold" Margin="0,0,0,10" />
                                         <TextBlock Text="Contrast Adjustment" Margin="0,0,0,5" />
-                                        <Slider x:Name="ContrastSlider" Width="310" Margin="0,0,0,15" Minimum="0" Maximum="255" Value="128" />
+                                        <Slider x:Name="ContrastSlider" Width="310" Margin="0,0,0,15" Minimum="0" Maximum="255" Value="128" ValueChanged="ContrastSlider_ValueChanged" />
 
                                         <TextBlock Text="Measurement Tools" FontWeight="Bold" Margin="0,0,0,10" />
-                                        <ui:Button x:Name="ROIDoseButton" Content="ROI Dose" Icon="{ui:SymbolIcon DrawShape24}" Width="310" Margin="0,0,0,8" Click="Measurement_Click" />
-                                        <ui:Button x:Name="DistanceButton" Content="Distance / Line" Icon="{ui:SymbolIcon Line24}" Width="310" Margin="0,0,0,8" Click="Measurement_Click" />
-                                        <ui:Button x:Name="AreaButton" Content="Area Measurement" Icon="{ui:SymbolIcon DocumentTable24}" Width="310" Margin="0,0,0,15" Click="Measurement_Click" />
+                                        <UniformGrid Columns="2" Width="310" Margin="0,0,0,15">
+                                            <ui:Button x:Name="ROIDoseButton" Content="ROI Dose" Icon="{ui:SymbolIcon DrawShape24}" HorizontalAlignment="Stretch" Margin="2" Click="Measurement_Click" />
+                                            <ui:Button x:Name="ProfileButton" Content="Profiles" Icon="{ui:SymbolIcon Line24}" HorizontalAlignment="Stretch" Margin="2" Click="ProfileButton_Click" />
+                                            <ui:Button x:Name="DistanceButton" Content="Distance" Icon="{ui:SymbolIcon Line24}" HorizontalAlignment="Stretch" Margin="2" Click="Measurement_Click" />
+                                            <ui:Button x:Name="AreaButton" Content="Area" Icon="{ui:SymbolIcon DocumentTable24}" HorizontalAlignment="Stretch" Margin="2" Click="Measurement_Click" />
+                                        </UniformGrid>
 
                                         <TextBlock Text="Color Map" FontWeight="Bold" Margin="0,0,0,5" />
                                         <TextBlock Text="Active Color Map" Margin="0,0,0,5" />
-                                        <ComboBox x:Name="ColorMapDropDown" Width="310" Margin="0,0,0,8" />
+                                        <ComboBox x:Name="ColorMapDropDown" Width="310" Margin="0,0,0,8" SelectionChanged="ColorMapDropDown_SelectionChanged" />
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
@@ -326,6 +336,20 @@
                                 <Ellipse x:Name="AlignMarkerRight" Width="10" Height="10" Fill="DodgerBlue" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
                                 <Ellipse x:Name="AlignMarkerTop" Width="10" Height="10" Fill="LimeGreen" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
                                 <Ellipse x:Name="AlignMarkerIso" Width="14" Height="14" Fill="Yellow" Stroke="Black" StrokeThickness="1.5" Visibility="Collapsed" />
+
+                                <!-- Measurement Tools Visualization -->
+                                <Line x:Name="MeasurementLine" Stroke="Lime" StrokeThickness="2" Visibility="Collapsed" />
+                                <Polyline x:Name="MeasurementPolyline" Stroke="Yellow" StrokeThickness="2" Visibility="Collapsed" />
+                                <Border x:Name="MeasurementLabel" 
+                                        Background="#CC000000" 
+                                        BorderBrush="White" 
+                                        BorderThickness="1" 
+                                        CornerRadius="4" 
+                                        Padding="5,2" 
+                                        Visibility="Collapsed" 
+                                        Panel.ZIndex="100">
+                                    <TextBlock x:Name="MeasurementLabelText" Foreground="White" FontWeight="Bold" FontSize="11" Text="0.00" />
+                                </Border>
                             </Canvas>
 
                             <!-- ROI Control Overlay -->

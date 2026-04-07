@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -100,6 +101,12 @@ namespace FilmAnalysis
         private bool _isROIFiltering = false;
         private AppSettings _settings = new AppSettings();
 
+        // Measurement State
+        private enum MeasurementMode { None, ROIDose, Distance, Area }
+        private MeasurementMode _activeMeasurementMode = MeasurementMode.None;
+        private bool _isAreaRectMode = false;
+        private List<Point> _measurementPoints = new();
+
         // Raw High-Precision Image Data
         private double[,] _redChannel;
         private double[,] _greenChannel;
@@ -149,6 +156,16 @@ namespace FilmAnalysis
             // Keyboard shortcuts for Undo/Redo
             InputBindings.Add(new KeyBinding(new RelayCommand(() => Undo_Click(null, null)), Key.Z, ModifierKeys.Control));
             InputBindings.Add(new KeyBinding(new RelayCommand(() => Redo_Click(null, null)), Key.Y, ModifierKeys.Control));
+
+            InitializeColorMaps();
+        }
+
+        private void InitializeColorMaps()
+        {
+            ColorMapDropDown.Items.Add(new ComboBoxItem { Content = "Jet", IsSelected = true });
+            ColorMapDropDown.Items.Add(new ComboBoxItem { Content = "Hot" });
+            ColorMapDropDown.Items.Add(new ComboBoxItem { Content = "Viridis" });
+            ColorMapDropDown.Items.Add(new ComboBoxItem { Content = "Gray" });
         }
 
         private void LoadSettings()
@@ -313,10 +330,14 @@ namespace FilmAnalysis
                     // Update Metadata
                     UpdateImageMetadata(dlg.FileName, bitmap.PixelWidth, bitmap.PixelHeight, 72.0); // Default DPI for standard images
 
-                    // Clear raw high-precision data if standard image is loaded
+                    // Clear photometry and dosimetry data if standard image is loaded
                     _redChannel = null;
                     _greenChannel = null;
                     _blueChannel = null;
+                    _doseMap = null;
+                    _isShowingDoseMap = false;
+                    ShowDoseToggle.IsChecked = false;
+                    ShowDoseToggle.IsEnabled = false;
                 }
                 catch
                 {
@@ -345,6 +366,12 @@ namespace FilmAnalysis
 
                     StatusText.Text = "Raw Film Loaded!";
                     StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
+
+                    // Reset dosimetry state
+                    _doseMap = null;
+                    _isShowingDoseMap = false;
+                    ShowDoseToggle.IsChecked = false;
+                    ShowDoseToggle.IsEnabled = false;
                 }
                 catch (Exception ex)
                 {
@@ -372,6 +399,7 @@ namespace FilmAnalysis
 
         private void ReadTiffData(string filePath)
         {
+            _doseMap = null; // Reset dose map on new data load
             using (Tiff image = Tiff.Open(filePath, "r"))
             {
                 if (image == null) throw new Exception("Could not open TIFF file.");
@@ -479,7 +507,11 @@ namespace FilmAnalysis
 
         private void UpdateDisplayFromRaw()
         {
-            if (_redChannel == null) return;
+            if (_redChannel == null) 
+            {
+                MainDisplayImage.Source = null;
+                return;
+            }
 
             int width = _redChannel.GetLength(1);
             int height = _redChannel.GetLength(0);
@@ -493,6 +525,14 @@ namespace FilmAnalysis
             foreach (var v in _blueChannel) { if (v < min) min = v; if (v > max) max = v; }
 
             if (max <= min) max = min + 1;
+
+            // Apply Contrast Adjustment
+            double range = max - min;
+            double center = (max + min) / 2.0;
+            double contrastScale = Math.Pow(2.0, (128 - ContrastSlider.Value) / 64.0); // Exponential scale
+            double newRange = range * contrastScale;
+            min = center - newRange / 2.0;
+            max = center + newRange / 2.0;
 
             // 2. Prepare Display Data with Gamma 2.2
             byte[] pixels = new byte[width * height * 4]; // BGRA
@@ -975,9 +1015,9 @@ namespace FilmAnalysis
         private void AutoCenter_Click(object sender, RoutedEventArgs e) { }
         private void ManuallyAlign_Click(object sender, RoutedEventArgs e)
         {
-            if (MainDisplayImage.Source == null || _redChannel == null)
+            if (MainDisplayImage.Source == null || (_redChannel == null && _doseMap == null))
             {
-                System.Windows.MessageBox.Show("Please load an image first.", "No Image");
+                System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data");
                 return;
             }
             if (_isSelectingROI) return;
@@ -1186,9 +1226,17 @@ namespace FilmAnalysis
         private void RefreshDisplay()
         {
             if (_isShowingDoseMap && _doseMap != null)
+            {
                 MainDisplayImage.Source = GenerateDoseHeatmap();
-            else
+            }
+            else if (_redChannel != null)
+            {
                 UpdateDisplayFromRaw();
+            }
+            else
+            {
+                MainDisplayImage.Source = null;
+            }
         }
 
         private static double[,] Rotate2D(double[,] src, int oldH, int oldW, bool isCW)
@@ -1207,15 +1255,18 @@ namespace FilmAnalysis
 
         private void Rotation_Click(object sender, RoutedEventArgs e)
         {
-            if (_redChannel == null) { System.Windows.MessageBox.Show("Please load an image first.", "No Image"); return; }
+            if (_redChannel == null && _doseMap == null) { System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data"); return; }
 
             bool isCW = (sender as FrameworkElement)?.Name == "CWButton";
             PushUndo(isCW ? "Rotate CW" : "Rotate CCW");
 
             int oldH = _imgHeight, oldW = _imgWidth;
-            _redChannel = Rotate2D(_redChannel, oldH, oldW, isCW);
-            _greenChannel = Rotate2D(_greenChannel, oldH, oldW, isCW);
-            _blueChannel = Rotate2D(_blueChannel, oldH, oldW, isCW);
+            if (_redChannel != null)
+            {
+                _redChannel = Rotate2D(_redChannel, oldH, oldW, isCW);
+                _greenChannel = Rotate2D(_greenChannel, oldH, oldW, isCW);
+                _blueChannel = Rotate2D(_blueChannel, oldH, oldW, isCW);
+            }
             if (_doseMap != null) _doseMap = Rotate2D(_doseMap, oldH, oldW, isCW);
 
             _imgWidth = oldH; _imgHeight = oldW;
@@ -1246,16 +1297,19 @@ namespace FilmAnalysis
 
         private void Flip_Click(object sender, RoutedEventArgs e)
         {
-            if (_redChannel == null) { System.Windows.MessageBox.Show("Please load an image first.", "No Image"); return; }
+            if (_redChannel == null && _doseMap == null) { System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data"); return; }
 
             bool isHorizontal = (sender as FrameworkElement)?.Name == "FlipHButton";
             PushUndo(isHorizontal ? "Flip H" : "Flip V");
 
             int h = _imgHeight, w = _imgWidth;
             Action<double[,], int, int> flipFn = isHorizontal ? FlipH : FlipV;
-            flipFn(_redChannel, h, w);
-            flipFn(_greenChannel, h, w);
-            flipFn(_blueChannel, h, w);
+            if (_redChannel != null)
+            {
+                flipFn(_redChannel, h, w);
+                flipFn(_greenChannel, h, w);
+                flipFn(_blueChannel, h, w);
+            }
             if (_doseMap != null) flipFn(_doseMap, h, w);
 
             RefreshDisplay();
@@ -1268,7 +1322,7 @@ namespace FilmAnalysis
 
         private void Crop_Click(object sender, RoutedEventArgs e)
         {
-            if (_redChannel == null) { System.Windows.MessageBox.Show("Please load an image first.", "No Image"); return; }
+            if (_redChannel == null && _doseMap == null) { System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data"); return; }
 
             string name = (sender as FrameworkElement)?.Name ?? "";
 
@@ -1318,9 +1372,9 @@ namespace FilmAnalysis
             w = Math.Min(w, _imgWidth - x); h = Math.Min(h, _imgHeight - y);
             if (w <= 0 || h <= 0) return;
 
-            _redChannel = CropArray(_redChannel, x, y, w, h);
-            _greenChannel = CropArray(_greenChannel, x, y, w, h);
-            _blueChannel = CropArray(_blueChannel, x, y, w, h);
+            if (_redChannel != null) _redChannel = CropArray(_redChannel, x, y, w, h);
+            if (_greenChannel != null) _greenChannel = CropArray(_greenChannel, x, y, w, h);
+            if (_blueChannel != null) _blueChannel = CropArray(_blueChannel, x, y, w, h);
             if (_doseMap != null) _doseMap = CropArray(_doseMap, x, y, w, h);
 
             _imgWidth = w; _imgHeight = h;
@@ -1335,7 +1389,7 @@ namespace FilmAnalysis
 
         private async void Filter_Click(object sender, RoutedEventArgs e)
         {
-            if (_redChannel == null) { System.Windows.MessageBox.Show("Please load an image first.", "No Image"); return; }
+            if (_redChannel == null && _doseMap == null) { System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data"); return; }
 
             string name = (sender as FrameworkElement)?.Name ?? "";
             bool doseMode = _isShowingDoseMap && _doseMap != null;
@@ -1475,7 +1529,11 @@ namespace FilmAnalysis
                 });
 
                 _imgWidth = newW; _imgHeight = newH;
+                _tiffDpi *= scale; // Maintain physical dimensions by scaling DPI
+
                 UpdateCropUI();
+                MetaDPI.Text = _tiffDpi.ToString("F1"); // Update UI Metadata
+
                 RefreshDisplay();
                 StatusText.Text = $"Interpolated to {newW}x{newH} ({method})";
                 StatusIndicator.Background = new SolidColorBrush(Colors.Green);
@@ -1803,9 +1861,15 @@ namespace FilmAnalysis
         {
             _isSelectingROI = false;
             _isDrawing = false;
+            _activeMeasurementMode = MeasurementMode.None;
+            _isAreaRectMode = false;
+
             SelectionRect.Visibility = Visibility.Collapsed;
             SelectionCrosshairH.Visibility = Visibility.Collapsed;
             SelectionCrosshairV.Visibility = Visibility.Collapsed;
+            MeasurementLine.Visibility = Visibility.Collapsed;
+            MeasurementPolyline.Visibility = Visibility.Collapsed;
+            MeasurementLabel.Visibility = Visibility.Collapsed;
             ROIModeOverlay.Visibility = Visibility.Collapsed;
             
             StatusText.Text = "ROI Tool Deactivated";
@@ -1844,6 +1908,41 @@ namespace FilmAnalysis
                 await PerformROIExtraction();
                 // Rulers can be refreshed once here
                 UpdateRulers();
+                return;
+            }
+
+            if (_activeMeasurementMode == MeasurementMode.Distance)
+            {
+                _isDrawing = true;
+                _startPoint = e.GetPosition(SelectionCanvas);
+                MeasurementLine.X1 = MeasurementLine.X2 = _startPoint.X;
+                MeasurementLine.Y1 = MeasurementLine.Y2 = _startPoint.Y;
+                MeasurementLine.Visibility = Visibility.Visible;
+                MeasurementLabel.Visibility = Visibility.Visible;
+                return;
+            }
+
+            if (_activeMeasurementMode == MeasurementMode.Area)
+            {
+                _isDrawing = true;
+                _startPoint = e.GetPosition(SelectionCanvas);
+                if (_isAreaRectMode)
+                {
+                    SelectionRect.Width = 0;
+                    SelectionRect.Height = 0;
+                    SelectionRect.Visibility = Visibility.Visible;
+                    Canvas.SetLeft(SelectionRect, _startPoint.X);
+                    Canvas.SetTop(SelectionRect, _startPoint.Y);
+                }
+                else
+                {
+                    _measurementPoints.Clear();
+                    _measurementPoints.Add(_startPoint);
+                    MeasurementPolyline.Points.Clear();
+                    MeasurementPolyline.Points.Add(_startPoint);
+                    MeasurementPolyline.Visibility = Visibility.Visible;
+                }
+                MeasurementLabel.Visibility = Visibility.Visible;
                 return;
             }
 
@@ -1893,7 +1992,61 @@ namespace FilmAnalysis
             if (!_isDrawing) return;
 
             Point currentPoint = e.GetPosition(SelectionCanvas);
-            
+
+            if (_activeMeasurementMode == MeasurementMode.Distance)
+            {
+                MeasurementLine.X2 = currentPoint.X;
+                MeasurementLine.Y2 = currentPoint.Y;
+
+                double distmm = CalculateDistance(ControlToPixel(_startPoint), ControlToPixel(currentPoint));
+                MeasurementLabelText.Text = $"{distmm:F2} mm";
+
+                Canvas.SetLeft(MeasurementLabel, (MeasurementLine.X1 + MeasurementLine.X2) / 2);
+                Canvas.SetTop(MeasurementLabel, (MeasurementLine.Y1 + MeasurementLine.Y2) / 2 - 20);
+                return;
+            }
+
+            if (_activeMeasurementMode == MeasurementMode.Area && _isDrawing)
+            {
+                Point pos = e.GetPosition(SelectionCanvas);
+                if (_isAreaRectMode)
+                {
+                    double rectX = Math.Min(pos.X, _startPoint.X);
+                    double rectY = Math.Min(pos.Y, _startPoint.Y);
+                    double rectW = Math.Abs(pos.X - _startPoint.X);
+                    double rectH = Math.Abs(pos.Y - _startPoint.Y);
+
+                    SelectionRect.Width = rectW;
+                    SelectionRect.Height = rectH;
+                    Canvas.SetLeft(SelectionRect, rectX);
+                    Canvas.SetTop(SelectionRect, rectY);
+
+                    Point startPixel = ControlToPixel(_startPoint);
+                    Point endPixel = ControlToPixel(pos);
+                    double wmm = Math.Abs(startPixel.X - endPixel.X) * 25.4 / _tiffDpi;
+                    double hmm = Math.Abs(startPixel.Y - endPixel.Y) * 25.4 / _tiffDpi;
+                    double areamm2 = wmm * hmm;
+
+                    MeasurementLabelText.Text = $"{wmm:F1}x{hmm:F1} mm\n{areamm2:N1} mm²";
+                    Canvas.SetLeft(MeasurementLabel, rectX + rectW / 2);
+                    Canvas.SetTop(MeasurementLabel, rectY + rectH / 2 - 25);
+                }
+                else
+                {
+                    _measurementPoints.Add(pos);
+                    MeasurementPolyline.Points.Add(pos);
+
+                    if (_measurementPoints.Count > 3)
+                    {
+                        double areamm2 = CalculateArea(_measurementPoints);
+                        MeasurementLabelText.Text = $"{areamm2:N1} mm²";
+                        Canvas.SetLeft(MeasurementLabel, pos.X);
+                        Canvas.SetTop(MeasurementLabel, pos.Y - 25);
+                    }
+                }
+                return;
+            }
+
             double x = Math.Min(currentPoint.X, _startPoint.X);
             double y = Math.Min(currentPoint.Y, _startPoint.Y);
             double w = Math.Abs(currentPoint.X - _startPoint.X);
@@ -1909,6 +2062,12 @@ namespace FilmAnalysis
         {
             if (!_isDrawing) return;
             _isDrawing = false;
+
+            if (_activeMeasurementMode == MeasurementMode.Distance || _activeMeasurementMode == MeasurementMode.Area)
+            {
+                // Measurements remain visible until mode is changed or new drawing starts
+                return;
+            }
 
             if (_isCropping || _isROIFiltering)
             {
@@ -1963,20 +2122,127 @@ namespace FilmAnalysis
 
                 private bool _isMeasurementMode = false;
 
+        private void ProfileButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_doseMap == null && _redChannel == null)
+            {
+                System.Windows.MessageBox.Show("Please load an image first.", "No Data");
+                return;
+            }
+
+            if (MainPlot == null) return;
+
+            int width = _imgWidth;
+            int height = _imgHeight;
+            int centerX = width / 2;
+            int centerY = height / 2;
+
+            double[] xProfile;
+            double[] yProfile;
+            string unit = "Dose (Gy)";
+
+            if (_doseMap != null)
+            {
+                xProfile = new double[width];
+                for (int x = 0; x < width; x++) xProfile[x] = _doseMap[centerY, x];
+
+                yProfile = new double[height];
+                for (int y = 0; y < height; y++) yProfile[y] = _doseMap[y, centerX];
+            }
+            else
+            {
+                // Fallback to active channel (using Red as default)
+                xProfile = new double[width];
+                for (int x = 0; x < width; x++) xProfile[x] = _redChannel[centerY, x];
+
+                yProfile = new double[height];
+                for (int y = 0; y < height; y++) yProfile[y] = _redChannel[y, centerX];
+                unit = "Pixel Value";
+            }
+
+            double[] xDistances = new double[width];
+            for (int x = 0; x < width; x++) xDistances[x] = (x - centerX) * 25.4 / _tiffDpi;
+
+            double[] yDistances = new double[height];
+            for (int y = 0; y < height; y++) yDistances[y] = (y - centerY) * 25.4 / _tiffDpi;
+
+            MainPlot.Plot.Clear();
+            
+            var xScatter = MainPlot.Plot.Add.Scatter(xDistances, xProfile);
+            xScatter.LegendText = "X Profile (H)";
+            xScatter.Color = ScottPlot.Color.FromHex("#0078D4"); // Blue
+            xScatter.LineWidth = 1;
+            xScatter.MarkerSize = 0;
+
+            var yScatter = MainPlot.Plot.Add.Scatter(yDistances, yProfile);
+            yScatter.LegendText = "Y Profile (V)";
+            yScatter.Color = ScottPlot.Color.FromHex("#E81123"); // Red
+            yScatter.LineWidth = 1;
+            yScatter.MarkerSize = 0;
+
+            MainPlot.Plot.Title("OAR / Central Profiles");
+            MainPlot.Plot.XLabel("Distance from Center (mm)");
+            MainPlot.Plot.YLabel(unit);
+            MainPlot.Plot.ShowLegend();
+            MainPlot.Plot.Axes.AutoScale();
+            MainPlot.Refresh();
+
+            StatusText.Text = "Profiles Plotted";
+        }
+
         private async void Measurement_Click(object sender, RoutedEventArgs e)
         {
             if (MainDisplayImage.Source == null) return;
-            
+
+            // Identify the mode
+            if (sender is System.Windows.Controls.Button btn)
+            {
+                if (btn.Name == "DistanceButton") _activeMeasurementMode = MeasurementMode.Distance;
+                else if (btn.Name == "AreaButton")
+                {
+                    _activeMeasurementMode = MeasurementMode.Area;
+                    // Show Tool Choice
+                    var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+                    var rbRect = new System.Windows.Controls.RadioButton { Content = "Simple Rectangle", IsChecked = true, Margin = new Thickness(0, 0, 0, 10) };
+                    var rbFree = new System.Windows.Controls.RadioButton { Content = "Freehand Draw", Margin = new Thickness(0, 0, 0, 10) };
+                    stack.Children.Add(rbRect);
+                    stack.Children.Add(rbFree);
+
+                    var diag = new ContentDialog { Title = "Choose Area Tool", Content = stack, PrimaryButtonText = "Select Tool", CloseButtonText = "Cancel" };
+                    var res = await _dialogService.ShowAsync(diag, System.Threading.CancellationToken.None);
+                    if (res != ContentDialogResult.Primary) { _activeMeasurementMode = MeasurementMode.None; return; }
+
+                    _isAreaRectMode = rbRect.IsChecked == true;
+                }
+                else _activeMeasurementMode = MeasurementMode.ROIDose;
+            }
+
             _isMeasurementMode = true;
             _isSelectingROI = true;
+            _isCropping = false;
+            _isROIFiltering = false;
+
             ROIModeOverlay.Visibility = Visibility.Visible;
-            StatusText.Text = "Measurement Mode (Select ROI)";
+
+            string modeName = _activeMeasurementMode == MeasurementMode.Distance ? "Distance/Line" :
+                            _activeMeasurementMode == MeasurementMode.Area ? $"Area ({(_isAreaRectMode ? "Rectangle" : "Freehand")})" : "ROI Dose";
+
+            StatusText.Text = $"Measurement Mode: {modeName}";
             StatusIndicator.Background = new SolidColorBrush(Colors.MediumPurple);
-            
-            if (_settings.LastWasFixed)
+
+            // Hide other visual tools
+            MeasurementLine.Visibility = Visibility.Collapsed;
+            MeasurementPolyline.Visibility = Visibility.Collapsed;
+            MeasurementLabel.Visibility = Visibility.Collapsed;
+
+            if (_activeMeasurementMode == MeasurementMode.ROIDose && _settings.LastWasFixed)
             {
                 RefreshFixedROISize();
                 SelectionRect.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                SelectionRect.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -2093,6 +2359,8 @@ namespace FilmAnalysis
                         _isMeasurementMode = false;
                         _isSelectingROI = false;
                         ROIModeOverlay.Visibility = Visibility.Collapsed;
+                        SelectionRect.Visibility = Visibility.Collapsed;
+
                         StatusText.Text = "Ready";
                         StatusIndicator.Background = new SolidColorBrush(Colors.Green);
                     }
@@ -2348,10 +2616,138 @@ namespace FilmAnalysis
 
         private void BrowseImage() => Open_Click(null!, null!);
         private void ProcessImage() => ConvertToDose_Click(null!, null!);
-        private void ExportResults() 
+        private void ExportResults() => ExportDoseMap_Click(null!, null!);
+
+        private void ExportDoseMap_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new SaveFileDialog { Filter = "Excel Files|*.xlsx|CSV Files|*.csv|All Files|*.*" };
-            if (dlg.ShowDialog() == true) { StatusText.Text = "Results Exported"; }
+            if (_doseMap == null)
+            {
+                System.Windows.MessageBox.Show("No dose map available to export. Please convert to dose first.");
+                return;
+            }
+
+            var dlg = new SaveFileDialog { Filter = "Text Files|*.txt|All Files|*.*", FileName = "DoseMap_Export.txt" };
+            if (dlg.ShowDialog() == true)
+            {
+                try
+                {
+                    using (var writer = new System.IO.StreamWriter(dlg.FileName))
+                    {
+                        writer.WriteLine($"Date: {DateTime.Now:yyyy-MM-dd}");
+                        writer.WriteLine($"DPI: {_tiffDpi:F1}");
+                        writer.WriteLine($"Interpolation: 1");
+                        writer.WriteLine($"X Res: {_imgWidth}");
+                        writer.WriteLine($"Y Res: {_imgHeight}");
+                        writer.WriteLine();
+                        writer.WriteLine();
+                        writer.WriteLine("Array Start:");
+
+                        for (int y = 0; y < _imgHeight; y++)
+                        {
+                            var sb = new StringBuilder();
+                            for (int x = 0; x < _imgWidth; x++)
+                            {
+                                sb.Append(_doseMap[y, x].ToString("F4", CultureInfo.InvariantCulture));
+                                if (x < _imgWidth - 1) sb.Append("\t");
+                            }
+                            writer.WriteLine(sb.ToString());
+                        }
+
+                        writer.WriteLine();
+                        writer.WriteLine(":Array End");
+                    }
+                    StatusText.Text = "Dose Map Exported";
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"Error exporting dose map: {ex.Message}");
+                }
+            }
+        }
+
+        private void ImportDoseMap_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog { Filter = "Text Files|*.txt|All Files|*.*" };
+            if (dlg.ShowDialog() == true)
+            {
+                try
+                {
+                    using (var reader = new System.IO.StreamReader(dlg.FileName))
+                    {
+                        // Parse header
+                        string? line;
+                        double dpi = 72;
+                        int width = 0, height = 0;
+
+                        // Read 5 header lines
+                        for (int i = 0; i < 5; i++)
+                        {
+                            line = reader.ReadLine();
+                            if (string.IsNullOrEmpty(line)) continue;
+                            var parts = line.Split(':');
+                            if (parts.Length < 2) continue;
+                            var key = parts[0].Trim();
+                            var val = parts[1].Trim();
+                            if (key.Contains("DPI")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out dpi);
+                            else if (key.Contains("X Res")) int.TryParse(val, out width);
+                            else if (key.Contains("Y Res")) int.TryParse(val, out height);
+                        }
+
+                        if (width == 0 || height == 0)
+                        {
+                            System.Windows.MessageBox.Show("Invalid header format (Width or Height is zero).");
+                            return;
+                        }
+
+                        // Look for Array Start:
+                        bool foundStart = false;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            if (line.Contains("Array Start:")) 
+                            { 
+                                foundStart = true;
+                                break; 
+                            }
+                        }
+
+                        if (!foundStart)
+                        {
+                            System.Windows.MessageBox.Show("Could not find 'Array Start:' marker.");
+                            return;
+                        }
+
+                        _doseMap = new double[height, width];
+                        for (int y = 0; y < height; y++)
+                        {
+                            line = reader.ReadLine();
+                            if (line == null || line.Contains(":Array End")) break;
+                            var values = line.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                            for (int x = 0; x < width && x < values.Length; x++)
+                            {
+                                double.TryParse(values[x], NumberStyles.Any, CultureInfo.InvariantCulture, out _doseMap[y, x]);
+                            }
+                        }
+
+                        _imgWidth = width;
+                        _imgHeight = height;
+                        _tiffDpi = dpi;
+                        _isShowingDoseMap = true;
+
+                        UpdateImageMetadata(dlg.FileName, width, height, dpi);
+                        MainDisplayImage.Source = GenerateDoseHeatmap();
+                        ShowDoseToggle.IsChecked = true;
+                        ShowDoseToggle.IsEnabled = true;
+                        UpdateRulers();
+
+                        StatusText.Text = "Dose Map Imported";
+                        StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"Error importing dose map: {ex.Message}");
+                }
+            }
         }
         private void OpenAlignmentWindow() => ManuallyAlign_Click(null!, null!);
         private void OpenJawSizeWindow() => JawSizeMenu_Click(null!, null!);
@@ -2420,12 +2816,18 @@ namespace FilmAnalysis
             double maxDose = 0.001;
             foreach (var d in _doseMap) if (d > maxDose) maxDose = d;
 
+            // Apply Contrast (Scaling) to dose map
+            double doseContrast = Math.Pow(2.0, (ContrastSlider.Value - 128) / 64.0);
+            maxDose /= doseContrast;
+
+            string mapName = (ColorMapDropDown.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Jet";
+
             Parallel.For(0, h, y =>
             {
                 for (int x = 0; x < w; x++)
                 {
                     double d = _doseMap[y, x];
-                    var (R, G, B) = GetJetColor(d / maxDose);
+                    var (R, G, B) = GetColorFromMap(d / maxDose, mapName);
                     int idx = y * stride + x * 4;
                     pixels[idx] = B;
                     pixels[idx + 1] = G;
@@ -2437,9 +2839,20 @@ namespace FilmAnalysis
             return BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
         }
 
-        private (byte R, byte G, byte B) GetJetColor(double v)
+        private (byte R, byte G, byte B) GetColorFromMap(double v, string mapName)
         {
             v = Math.Clamp(v, 0, 1);
+            return mapName switch
+            {
+                "Hot" => GetHotColor(v),
+                "Viridis" => GetViridisColor(v),
+                "Gray" => GetGrayColor(v),
+                _ => GetJetColor(v)
+            };
+        }
+
+        private (byte R, byte G, byte B) GetJetColor(double v)
+        {
             double r = 0, g = 0, b = 0;
             if (v < 0.25) { r = 0; g = 4 * v; b = 1; }
             else if (v < 0.5) { r = 0; g = 1; b = 1 + 4 * (0.25 - v); }
@@ -2447,5 +2860,87 @@ namespace FilmAnalysis
             else { r = 1; g = 1 + 4 * (0.75 - v); b = 0; }
             return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
         }
+
+        private (byte R, byte G, byte B) GetHotColor(double v)
+        {
+            double r, g, b;
+            if (v < 0.33) { r = 3 * v; g = 0; b = 0; }
+            else if (v < 0.66) { r = 1; g = 3 * (v - 0.33); b = 0; }
+            else { r = 1; g = 1; b = 3 * (v - 0.66); }
+            return ((byte)(Math.Clamp(r, 0, 1) * 255), (byte)(Math.Clamp(g, 0, 1) * 255), (byte)(Math.Clamp(b, 0, 1) * 255));
+        }
+
+        private (byte R, byte G, byte B) GetGrayColor(double v)
+        {
+            byte val = (byte)(v * 255);
+            return (val, val, val);
+        }
+
+        private (byte R, byte G, byte B) GetViridisColor(double v)
+        {
+            // Simple 3-point approximation: Purple -> Green -> Yellow
+            double r, g, b;
+            if (v < 0.5) {
+                double t = v * 2;
+                r = 0.26 + 0.1 * t; g = 0.0 + 0.6 * t; b = 0.33 + 0.1 * t;
+            } else {
+                double t = (v - 0.5) * 2;
+                r = 0.36 + 0.6 * t; g = 0.6 + 0.3 * t; b = 0.43 - 0.3 * t;
+            }
+            return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
+        }
+
+        private void ContrastSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_redChannel != null || _doseMap != null) RefreshDisplay();
+        }
+
+        private void ColorMapDropDown_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isShowingDoseMap && _doseMap != null) RefreshDisplay();
+        }
+
+        #region Measurement Helpers
+
+        private Point ControlToPixel(Point controlPoint)
+        {
+            if (MainDisplayImage.Source is not BitmapSource bs) return controlPoint;
+            System.Windows.Rect renderedRect = GetRenderedImageBounds(MainDisplayImage);
+            if (renderedRect.Width <= 0 || renderedRect.Height <= 0) return controlPoint;
+
+            double xRatio = bs.PixelWidth / renderedRect.Width;
+            double yRatio = bs.PixelHeight / renderedRect.Height;
+
+            double xInImage = (controlPoint.X - renderedRect.X) * xRatio;
+            double yInImage = (controlPoint.Y - renderedRect.Y) * yRatio;
+
+            return new Point(xInImage, yInImage);
+        }
+
+        private double CalculateDistance(Point p1, Point p2)
+        {
+            double dx = p1.X - p2.X;
+            double dy = p1.Y - p2.Y;
+            double pixelDist = Math.Sqrt(dx * dx + dy * dy);
+            return pixelDist * 25.4 / _tiffDpi;
+        }
+
+        private double CalculateArea(List<Point> points)
+        {
+            if (points == null || points.Count < 3) return 0;
+            var pixelPoints = points.Select(p => ControlToPixel(p)).ToList();
+            double area = 0;
+            int j = pixelPoints.Count - 1;
+            for (int i = 0; i < pixelPoints.Count; i++)
+            {
+                area += (pixelPoints[j].X + pixelPoints[i].X) * (pixelPoints[j].Y - pixelPoints[i].Y);
+                j = i;
+            }
+            double areaPixels2 = Math.Abs(area / 2.0);
+            double factor = 25.4 / _tiffDpi;
+            return areaPixels2 * factor * factor;
+        }
+
+        #endregion
     }
 }
