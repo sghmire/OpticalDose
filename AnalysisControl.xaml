@@ -31,14 +31,7 @@
                         <ui:Button x:Name="SyncDicomButton" Grid.Column="1" Content="Sync DICOM" Icon="{ui:SymbolIcon CubeSync24}" HorizontalAlignment="Stretch" Click="SyncDicomButton_Click" />
                     </Grid>
                     
-                    <ui:Card Padding="10" Margin="0,0,0,10">
-                        <StackPanel>
-                             <TextBlock Text="Film Dose:" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                             <TextBlock x:Name="FilmStatusText" Text="Not Loaded" FontWeight="SemiBold" Margin="0,2,0,5"/>
-                             <TextBlock Text="Plan Dose (DICOM):" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                             <TextBlock x:Name="PlanStatusText" Text="Not Loaded" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </ui:Card>
+                    <!-- (Data Source Info moved to Gamma Map overlay) -->
 
                     <!-- ROI Selection -->
                     <TextBlock Text="Region of Interest" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,5" />
@@ -125,7 +118,7 @@
                                  <StackPanel>
                                      <TextBlock Text="Gamma Pass Rate" FontSize="12" HorizontalAlignment="Center"/>
                                      <TextBlock x:Name="PassRateText" Text="98.5 %" FontSize="28" FontWeight="Bold" Foreground="Lime" HorizontalAlignment="Center" Margin="0,5"/>
-                                     <TextBlock x:Name="PassRateStatus" Text="PASS (Criteria: 95%)" FontSize="10" HorizontalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                     <TextBlock x:Name="PassRateStatus" Text="PASS (Criteria: 90%)" FontSize="10" HorizontalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                  </StackPanel>
                              </Border>
                          </StackPanel>
@@ -214,6 +207,23 @@
                     </Grid.RowDefinitions>
                     <TextBlock Text="Gamma Index Map" HorizontalAlignment="Center" FontWeight="SemiBold" Margin="5" Foreground="White" Opacity="0.7"/>
                     <Image x:Name="GammaImage" Grid.Row="1" Stretch="Uniform" />
+                    
+                    <!-- Dose Source Overlay (Top Right) -->
+                    <StackPanel Grid.Row="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10">
+                        <Border Background="#99000000" CornerRadius="4" Padding="8,4" Margin="0,0,0,5" x:Name="FilmOverlayBorder" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Film: " Foreground="#CCCCCC" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock x:Name="FilmOverlayText" Text="None" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#99000000" CornerRadius="4" Padding="8,4" x:Name="DicomOverlayBorder" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="DICOM: " Foreground="#CCCCCC" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock x:Name="DicomOverlayText" Text="None" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
                     <TextBlock x:Name="GammaEmptyMsg" Grid.Row="1" Text="Run Analysis to view Gamma Map" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#666666" />
                 </Grid>
             </Border>

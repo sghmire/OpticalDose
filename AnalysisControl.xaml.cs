@@ -26,6 +26,8 @@ namespace FilmAnalysis
         private double _planOriginX, _planOriginY;
         private double _planSpacingYSign = 1.0;
         private string _planeOrientation = "Z";
+        private string _filmFileName = "None";
+        private string _dicomFileName = "None";
 
         // ROI Selection
         private bool _roiSelectMode = false;
@@ -60,22 +62,24 @@ namespace FilmAnalysis
             ProfilePlot.Refresh();
         }
 
-        public void SetFilmDose(double[,] dose, double dpiX, double dpiY)
+        public void SetFilmDose(double[,] dose, double dpiX, double dpiY, string fileName)
         {
             _filmDose = dose;
             _filmDpiX = dpiX;
             _filmDpiY = dpiY;
+            _filmFileName = System.IO.Path.GetFileName(fileName);
             _filmOriginX = -(dose.GetLength(1) / 2.0) * (25.4 / dpiX);
             _filmOriginY = -(dose.GetLength(0) / 2.0) * (25.4 / dpiY);
 
-            FilmStatusText.Text = $"Loaded ({dose.GetLength(1)}x{dose.GetLength(0)})";
+            FilmOverlayText.Text = _filmFileName;
+            FilmOverlayBorder.Visibility = Visibility.Visible;
             MeasuredEmptyMsg.Visibility = Visibility.Collapsed;
             RefreshImages();
             UpdateProfiles();
             CheckReady();
         }
 
-        public void SetPlanDose(double[,] dose, double dpiX, double dpiY, double refX, double refY, double refZ, double origX, double origY, double spacingYSign, string orientation)
+        public void SetPlanDose(double[,] dose, double dpiX, double dpiY, double refX, double refY, double refZ, double origX, double origY, double spacingYSign, string orientation, string fileName)
         {
             _planDose = dose;
             _planDpiX = dpiX;
@@ -87,8 +91,10 @@ namespace FilmAnalysis
             _planOriginY = origY;
             _planSpacingYSign = spacingYSign;
             _planeOrientation = orientation;
+            _dicomFileName = System.IO.Path.GetFileName(fileName);
 
-            PlanStatusText.Text = $"Loaded ({dose.GetLength(1)}x{dose.GetLength(0)}) at {refZ:F1}mm";
+            DicomOverlayText.Text = _dicomFileName;
+            DicomOverlayBorder.Visibility = Visibility.Visible;
             PlannedEmptyMsg.Visibility = Visibility.Collapsed;
             RefreshImages();
             UpdateProfiles();
@@ -528,8 +534,8 @@ namespace FilmAnalysis
 
             double passRate = (double)passPoints / totalPoints * 100.0;
             PassRateText.Text = $"{passRate:F1} %";
-            PassRateText.Foreground = passRate >= 95 ? Brushes.Lime : Brushes.Red;
-            PassRateStatus.Text = passRate >= 95 ? "PASS (Criteria: 95%)" : "FAIL (Criteria: 95%)";
+            PassRateText.Foreground = passRate >= 90 ? Brushes.Lime : Brushes.Red;
+            PassRateStatus.Text = passRate >= 90 ? "PASS (Criteria: 90%)" : "FAIL (Criteria: 90%)";
             ResultsPanel.Visibility = Visibility.Visible;
         }
 

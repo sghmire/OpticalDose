@@ -135,6 +135,8 @@ namespace FilmAnalysis
         private double _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ;
         private double _importedPlanSpacingYSign = 1.0;
         private string _importedPlanOrientation = "Z";
+        private string _activeFilmFileName = "None";
+        private string _activeDicomFileName = "None";
 
         // Undo/Redo History
         private class ImageState
@@ -482,6 +484,8 @@ namespace FilmAnalysis
                 try
                 {
                     ReadTiffData(dlg.FileName);
+                    
+                    _activeFilmFileName = dlg.FileName;
                     
                     // Update Metadata (DPI and Size are updated inside ReadTiffData or here)
                     long fileSize = new System.IO.FileInfo(dlg.FileName).Length;
@@ -850,7 +854,7 @@ namespace FilmAnalysis
 
             if (hasFilm)
             {
-                AnalysisComp.SetFilmDose(_filmDoseMap, _filmDpiX, _filmDpiY);
+                AnalysisComp.SetFilmDose(_filmDoseMap, _filmDpiX, _filmDpiY, _activeFilmFileName);
             }
 
             if (hasPlan)
@@ -859,7 +863,7 @@ namespace FilmAnalysis
                                        _importedPlanDpiX, _importedPlanDpiY,
                                        _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ,
                                        _importedPlanOriginX, _importedPlanOriginY,
-                                       _importedPlanSpacingYSign, _importedPlanOrientation);
+                                       _importedPlanSpacingYSign, _importedPlanOrientation, _activeDicomFileName);
             }
 
             if (hasFilm || hasPlan)
@@ -876,6 +880,8 @@ namespace FilmAnalysis
         private void DicomViewer_DosePlaneExtracted(object sender, DoseExtractedEventArgs e)
         {
             if (e.DoseMap == null) return;
+            
+            _activeDicomFileName = e.FileName ?? "DICOM Set";
 
             // Send to Analysis Component with full coordinate mapping
             AnalysisComp.SetPlanDose(e.DoseMap, 
@@ -884,7 +890,8 @@ namespace FilmAnalysis
                                    e.RefX, e.RefY, e.RefZ,
                                    e.OriginX, e.OriginY,
                                    e.SpacingYSign,
-                                   e.PlaneOrientation);
+                                   e.PlaneOrientation,
+                                   _activeDicomFileName);
 
             // Switching to Analysis Tab now handled by UI
             MenuSelectAnalysis_Click(null, null);
@@ -3052,6 +3059,7 @@ namespace FilmAnalysis
                             _dpiX = _dpiY = dpi;
                             _filmDpiX = _filmDpiY = dpi;
                             _isShowingDoseMap = true;
+                            _activeFilmFileName = dlg.FileName;
 
                             UpdateImageMetadata(dlg.FileName, width, height, dpi);
                             MainDisplayImage.Source = GenerateDoseHeatmap();
@@ -3059,6 +3067,7 @@ namespace FilmAnalysis
                             ShowDoseToggle.IsEnabled = true;
                             UpdateRulers();
                             StatusText.Text = "Film Dose Map Imported";
+                            SyncAllDataToAnalysis();
                         }
                         else
                         {
@@ -3071,7 +3080,9 @@ namespace FilmAnalysis
                             _importedPlanRefZ = rz;
                             _importedPlanSpacingYSign = sySign;
                             _importedPlanOrientation = orientation;
+                            _activeDicomFileName = dlg.FileName;
                             StatusText.Text = "DICOM Dose Map Imported (Ready for Analysis)";
+                            SyncAllDataToAnalysis();
                         }
 
                         StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
