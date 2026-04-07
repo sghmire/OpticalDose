@@ -1,0 +1,237 @@
+<UserControl x:Class="FilmAnalysis.DicomControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:FilmAnalysis"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             mc:Ignorable="d" 
+             d:DesignHeight="850" d:DesignWidth="1250">
+    <Grid Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="340" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Left Control Panel -->
+        <Border Grid.Column="0" Margin="0,0,10,0" Padding="15" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" /> <!-- Header -->
+                    <RowDefinition Height="Auto" /> <!-- Navigation Sliders -->
+                    <RowDefinition Height="*" />    <!-- Metadata -->
+                    <RowDefinition Height="Auto" /> <!-- Extraction -->
+                </Grid.RowDefinitions>
+
+                <!-- Header Actions -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,15">
+                    <TextBlock Text="DICOM MPR Viewer" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource AccentFillColorDefaultBrush}" Margin="0,0,0,5" />
+                    <TextBlock x:Name="StatusText" Text="Ready to load DICOM" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,10" />
+                    <ui:Button x:Name="LoadDicomButton" Content="Load DICOM Set (RD/RS/RP)" Icon="{ui:SymbolIcon Open24}" Width="300" Height="40" Appearance="Primary" Click="LoadDicomSet_Click" />
+                    
+                    <!-- Loaded file indicators -->
+                    <StackPanel Margin="0,8,0,0" Orientation="Vertical">
+                        <TextBlock x:Name="RdStatus" Text="● RD (Dose): Not loaded" FontSize="10" Foreground="#666" />
+                        <TextBlock x:Name="RsStatus" Text="● RS (Struct): Not loaded" FontSize="10" Foreground="#666" />
+                        <TextBlock x:Name="RpStatus" Text="● RP (Plan): Not loaded" FontSize="10" Foreground="#666" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Navigation Sliders -->
+                <StackPanel Grid.Row="1" Margin="0,0,0,15">
+                    <TextBlock Text="Multi-Planar Navigation" FontWeight="Bold" Margin="0,0,0,10" />
+                    
+                    <!-- Z Slider (Axial) -->
+                    <TextBlock Text="Z-Axis (Superior/Inferior)" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Grid Margin="0,2,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="20" />
+                        </Grid.ColumnDefinitions>
+                        <ui:NumberBox x:Name="ZCoordInput" Value="0" Grid.Column="0" Margin="0,0,5,0" KeyDown="CoordInput_KeyDown" ValueChanged="CoordInput_ValueChanged" SpinButtonPlacementMode="Compact" />
+                        <Slider x:Name="ZSlider" Minimum="0" Maximum="100" Value="0" Grid.Column="1" ValueChanged="Slider_ValueChanged" VerticalAlignment="Center" />
+                        <TextBlock x:Name="ZPosText" Text="mm" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="9" Margin="5,0,0,0" />
+                    </Grid>
+
+                    <!-- Y Slider (Coronal) -->
+                    <TextBlock Text="Y-Axis (Posterior/Anterior)" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Grid Margin="0,2,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="20" />
+                        </Grid.ColumnDefinitions>
+                        <ui:NumberBox x:Name="YCoordInput" Value="0" Grid.Column="0" Margin="0,0,5,0" KeyDown="CoordInput_KeyDown" ValueChanged="CoordInput_ValueChanged" SpinButtonPlacementMode="Compact" />
+                        <Slider x:Name="YSlider" Minimum="0" Maximum="100" Value="0" Grid.Column="1" ValueChanged="Slider_ValueChanged" VerticalAlignment="Center" />
+                        <TextBlock x:Name="YPosText" Text="mm" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="9" Margin="5,0,0,0" />
+                    </Grid>
+
+                    <!-- X Slider (Sagittal) -->
+                    <TextBlock Text="X-Axis (Left/Right)" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Grid Margin="0,2,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="20" />
+                        </Grid.ColumnDefinitions>
+                        <ui:NumberBox x:Name="XCoordInput" Value="0" Grid.Column="0" Margin="0,0,5,0" KeyDown="CoordInput_KeyDown" ValueChanged="CoordInput_ValueChanged" SpinButtonPlacementMode="Compact" />
+                        <Slider x:Name="XSlider" Minimum="0" Maximum="100" Value="0" Grid.Column="1" ValueChanged="Slider_ValueChanged" VerticalAlignment="Center" />
+                        <TextBlock x:Name="XPosText" Text="mm" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="9" Margin="5,0,0,0" />
+                    </Grid>
+                </StackPanel>
+
+                <!-- Center Content: Alignment -->
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,10,0">
+                        <!-- Coordinate Alignment -->
+                        <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,8">
+                                    <TextBlock Text="Coordinate Alignment" FontWeight="Bold" VerticalAlignment="Center" />
+                                    <ui:ToggleSwitch x:Name="TpsModeToggle" Content="TPS Mode" HorizontalAlignment="Right" IsChecked="True" Click="TpsMode_Checked" />
+                                </Grid>
+                                
+                                <TextBlock Text="Plan Isocenter (DICOM LPS, mm)" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,5" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:NumberBox x:Name="IsoXInput" Value="0" Grid.Column="0" Margin="0,0,2,0" FontSize="11" ClearButtonEnabled="False" PlaceholderText="X" SpinButtonPlacementMode="Compact" ValueChanged="IsoInput_ValueChanged" />
+                                    <ui:NumberBox x:Name="IsoYInput" Value="0" Grid.Column="1" Margin="2,0,2,0" FontSize="11" ClearButtonEnabled="False" PlaceholderText="Y" SpinButtonPlacementMode="Compact" ValueChanged="IsoInput_ValueChanged" />
+                                    <ui:NumberBox x:Name="IsoZInput" Value="0" Grid.Column="2" Margin="2,0,0,0" FontSize="11" ClearButtonEnabled="False" PlaceholderText="Z" SpinButtonPlacementMode="Compact" ValueChanged="IsoInput_ValueChanged" />
+                                </Grid>
+                                <ui:Button Content="Set Current as Isocenter" Icon="{ui:SymbolIcon Target24}" Width="300" Margin="0,8,0,0" Appearance="Secondary" Click="SetIsocenter_Click" />
+                                <TextBlock Text="When TPS Mode is ON, the X/Y/Z sliders above accept Eclipse coordinates relative to this Isocenter." FontSize="9" Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Structures & Extraction -->
+                <StackPanel Grid.Row="3" Margin="0,10,0,0">
+                    <!-- Structure Navigation -->
+                    <StackPanel>
+                        <Grid Margin="0,0,0,5">
+                            <TextBlock Text="Structures" FontWeight="Bold" VerticalAlignment="Center" />
+                            <ui:ToggleSwitch x:Name="ShowContoursToggle" Content="Show All" HorizontalAlignment="Right" IsChecked="False" Click="ShowContours_Checked" />
+                        </Grid>
+                        <ComboBox x:Name="StructureCombo" Width="300" DisplayMemberPath="Name" Margin="0,0,0,5" SelectionChanged="StructureCombo_Changed" />
+                        <ui:Button x:Name="GoToCenterBtn" Content="Go to Structure Center" Icon="{ui:SymbolIcon Location24}" Width="300" Height="36" Appearance="Primary" IsEnabled="False" Click="GoToCenter_Click" />
+                    </StackPanel>
+                    
+                    <!-- Extraction -->
+                    <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Margin="0,10,0,0" Padding="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Extract Plane" FontWeight="Bold" Margin="0,0,0,5" />
+                            <ComboBox x:Name="PlaneCombo" Width="300" SelectedIndex="0" Margin="0,0,0,5">
+                                <ComboBoxItem Content="Axial (Z)" Tag="Z" />
+                                <ComboBoxItem Content="Coronal (Y)" Tag="Y" />
+                                <ComboBoxItem Content="Sagittal (X)" Tag="X" />
+                            </ComboBox>
+                            <ui:Button x:Name="ExtractPlaneButton" Content="Extract Selected Plane" Icon="{ui:SymbolIcon TargetArrow24}" Width="300" Height="36" Appearance="Primary" IsEnabled="False" Click="ExtractSelectedPlane_Click" Margin="0,0,0,5" />
+                            <ui:Button x:Name="ExportPlaneButton" Content="Export Plane to .txt" Icon="{ui:SymbolIcon Save24}" Width="300" Height="36" Appearance="Secondary" IsEnabled="False" Click="ExportPlane_Click" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Right MPR Display Area -->
+        <Border Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="5" CornerRadius="8">
+            <Grid x:Name="MprGrid">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Top Left: Axial -->
+                <Border Grid.Row="0" Grid.Column="0" BorderBrush="#33AAAAAA" BorderThickness="0,0,1,1" Margin="2">
+                    <Grid Background="#101010">
+                        <TextBlock Text="AXIAL (XY)" Foreground="#88FFFFFF" FontSize="10" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="5" Panel.ZIndex="10" />
+                        <Image x:Name="AxialImage" Stretch="Uniform" />
+                        <Canvas x:Name="AxialCanvas" IsHitTestVisible="False">
+                            <Line x:Name="AxialLineX" Stroke="Cyan" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                            <Line x:Name="AxialLineY" Stroke="Yellow" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                        </Canvas>
+                    </Grid>
+                </Border>
+
+                <!-- Top Right: Coronal -->
+                <Border Grid.Row="0" Grid.Column="1" BorderBrush="#33AAAAAA" BorderThickness="0,0,0,1" Margin="2">
+                    <Grid Background="#101010">
+                        <TextBlock Text="CORONAL (XZ)" Foreground="#88FFFFFF" FontSize="10" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="5" Panel.ZIndex="10" />
+                        <Image x:Name="CoronalImage" Stretch="Uniform" />
+                        <Canvas x:Name="CoronalCanvas" IsHitTestVisible="False">
+                            <Line x:Name="CoronalLineX" Stroke="Cyan" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                            <Line x:Name="CoronalLineZ" Stroke="Magenta" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                        </Canvas>
+                    </Grid>
+                </Border>
+
+                <!-- Bottom Left: Sagittal -->
+                <Border Grid.Row="1" Grid.Column="0" BorderBrush="#33AAAAAA" BorderThickness="0,0,1,0" Margin="2">
+                    <Grid Background="#101010">
+                        <TextBlock Text="SAGITTAL (YZ)" Foreground="#88FFFFFF" FontSize="10" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="5" Panel.ZIndex="10" />
+                        <Image x:Name="SagittalImage" Stretch="Uniform" />
+                        <Canvas x:Name="SagittalCanvas" IsHitTestVisible="False">
+                            <Line x:Name="SagittalLineY" Stroke="Yellow" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                            <Line x:Name="SagittalLineZ" Stroke="Magenta" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                        </Canvas>
+                    </Grid>
+                </Border>
+
+                <!-- Bottom Right: Info Panel -->
+                <Border Grid.Row="1" Grid.Column="1" Margin="2">
+                    <Grid Background="#050505">
+                        <StackPanel VerticalAlignment="Top" Margin="15">
+                            <!-- Grid Details -->
+                            <TextBlock Text="Grid Details" FontWeight="Bold" Foreground="White" Margin="0,0,0,8" />
+                            <Grid x:Name="MetadataGrid">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Patient:" Margin="0,0,10,3" Foreground="#888" />
+                                <TextBlock x:Name="MetaPatient" Grid.Row="0" Grid.Column="1" Text="N/A" FontWeight="SemiBold" Foreground="White" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Dim:" Margin="0,0,10,3" Foreground="#888" />
+                                <TextBlock x:Name="MetaDim" Grid.Row="1" Grid.Column="1" Text="0x0x0" FontWeight="SemiBold" Foreground="White" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Spacing:" Margin="0,0,10,3" Foreground="#888" />
+                                <TextBlock x:Name="MetaSpacing" Grid.Row="2" Grid.Column="1" Text="0.0, 0.0 mm" FontWeight="SemiBold" Foreground="White" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Thk:" Margin="0,0,10,3" Foreground="#888" />
+                                <TextBlock x:Name="MetaThk" Grid.Row="3" Grid.Column="1" Text="0.0 mm" FontWeight="SemiBold" Foreground="White" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Max Dose:" Margin="0,0,10,0" Foreground="#888" />
+                                <TextBlock x:Name="MetaMaxDose" Grid.Row="4" Grid.Column="1" Text="0.00 cGy" FontWeight="SemiBold" Foreground="White" />
+                            </Grid>
+
+                            <Separator Margin="0,12" Background="#33FFFFFF" />
+
+                            <!-- Voxel Coordinates -->
+                            <TextBlock Text="Voxel Coordinates" FontWeight="Bold" Foreground="White" Margin="0,0,0,5" />
+                            <TextBlock x:Name="LpsCoordText" Text="X: 0.0, Y: 0.0, Z: 0.0" Foreground="#AAAAAA" />
+                            
+                            <Separator Margin="0,12" Background="#33FFFFFF" />
+
+                            <!-- Dose at Cursor -->
+                            <TextBlock Text="Dose at Cursor" FontWeight="Bold" Foreground="White" Margin="0,0,0,5" />
+                            <TextBlock x:Name="CursorDoseText" Text="0.00 cGy" Foreground="Yellow" FontSize="22" FontWeight="Bold" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

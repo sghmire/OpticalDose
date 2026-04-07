@@ -112,13 +112,23 @@ namespace FilmAnalysis
         private double[,] _greenChannel;
         private double[,] _blueChannel;
         private int _imgWidth, _imgHeight;
-        private double _tiffDpi = 72; // Default DPI
+        private double _dpiX = 72, _dpiY = 72; // Independent X and Y DPI
         private string _calibrationsFolder;
 
         // Dosimetry States
         private double[,] _doseMap;
+        private double[,] _filmDoseMap; // Dedicated film dose storage
+        private double _filmDpiX, _filmDpiY;
         private ImageSource _rawImageSource;
         private bool _isShowingDoseMap = false;
+        
+        // Imported Plan Dose for direct Analysis loading
+        private double[,] _importedPlanDose;
+        private double _importedPlanDpiX, _importedPlanDpiY;
+        private double _importedPlanOriginX, _importedPlanOriginY;
+        private double _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ;
+        private double _importedPlanSpacingYSign = 1.0;
+        private string _importedPlanOrientation = "Z";
 
         // Undo/Redo History
         private class ImageState
@@ -126,6 +136,7 @@ namespace FilmAnalysis
             public double[,] Red, Green, Blue;
             public double[,] DoseMap;
             public int Width, Height;
+            public double DpiX, DpiY;
             public bool ShowingDose;
             public string Description;
         }
@@ -136,6 +147,8 @@ namespace FilmAnalysis
         {
             InitializeComponent();
             _dialogService.SetContentPresenter(RootContentDialogPresenter);
+
+            AnalysisComp.PlanRequested += AnalysisComp_PlanRequested;
             
             LoadSettings();
 
@@ -361,7 +374,7 @@ namespace FilmAnalysis
                     long fileSize = new System.IO.FileInfo(dlg.FileName).Length;
                     MetaFileName.Text = System.IO.Path.GetFileName(dlg.FileName);
                     MetaImageSize.Text = $"{_imgWidth} x {_imgHeight}";
-                    MetaDPI.Text = _tiffDpi.ToString("F1");
+                    MetaDPI.Text = _dpiX == _dpiY ? _dpiX.ToString("F1") : $"{_dpiX:F1}x{_dpiY:F1}";
                     MetaFileSize.Text = $"{(fileSize / 1024.0 / 1024.0):F2} MB";
 
                     StatusText.Text = "Raw Film Loaded!";
@@ -425,9 +438,9 @@ namespace FilmAnalysis
                     short unit = (res != null) ? res[0].ToShort() : (short)2; // 2 = Inch
 
                     if (unit == 3) // Centimeter
-                        _tiffDpi = xRes * 2.54;
+                        _dpiX = _dpiY = xRes * 2.54;
                     else
-                        _tiffDpi = xRes;
+                        _dpiX = _dpiY = xRes;
                 }
 
                 // Orientation extraction
@@ -590,6 +603,8 @@ namespace FilmAnalysis
                 DoseMap = CloneArray(_doseMap),
                 Width = _imgWidth,
                 Height = _imgHeight,
+                DpiX = _dpiX,
+                DpiY = _dpiY,
                 ShowingDose = _isShowingDoseMap,
                 Description = description
             });
@@ -610,6 +625,8 @@ namespace FilmAnalysis
                 DoseMap = CloneArray(_doseMap),
                 Width = _imgWidth,
                 Height = _imgHeight,
+                DpiX = _dpiX,
+                DpiY = _dpiY,
                 ShowingDose = _isShowingDoseMap,
                 Description = "Redo"
             });
@@ -633,6 +650,8 @@ namespace FilmAnalysis
                 DoseMap = CloneArray(_doseMap),
                 Width = _imgWidth,
                 Height = _imgHeight,
+                DpiX = _dpiX,
+                DpiY = _dpiY,
                 ShowingDose = _isShowingDoseMap,
                 Description = "Undo"
             });
@@ -651,6 +670,8 @@ namespace FilmAnalysis
             _doseMap = state.DoseMap;
             _imgWidth = state.Width;
             _imgHeight = state.Height;
+            _dpiX = state.DpiX;
+            _dpiY = state.DpiY;
             UpdateCropUI();
             _isShowingDoseMap = state.ShowingDose;
 
@@ -665,6 +686,7 @@ namespace FilmAnalysis
                 UpdateDisplayFromRaw();
                 ShowDoseToggle.IsChecked = false;
             }
+            UpdateRulers();
         }
 
         private void UpdateUndoRedoUI()
@@ -679,16 +701,76 @@ namespace FilmAnalysis
         {
             if (MainTabControl == null) return;
             MainTabControl.SelectedIndex = 0;
-            if (NavCalibrationButton != null) NavCalibrationButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
-            if (NavDicomButton != null) NavDicomButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+            UpdateNavButtons(0);
         }
 
         private void MenuSelectDicom_Click(object sender, RoutedEventArgs e)
         {
             if (MainTabControl == null) return;
             MainTabControl.SelectedIndex = 1;
-            if (NavCalibrationButton != null) NavCalibrationButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
-            if (NavDicomButton != null) NavDicomButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
+            UpdateNavButtons(1);
+        }
+
+        private void MenuSelectAnalysis_Click(object sender, RoutedEventArgs e)
+        {
+            if (MainTabControl == null) return;
+            MainTabControl.SelectedIndex = 2;
+            UpdateNavButtons(2);
+        }
+
+        private void UpdateNavButtons(int index)
+        {
+            if (NavCalibrationButton != null) NavCalibrationButton.Appearance = index == 0 ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
+            if (NavDicomButton != null) NavDicomButton.Appearance = index == 1 ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
+            if (NavAnalysisButton != null) NavAnalysisButton.Appearance = index == 2 ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
+        }
+
+        private void AnalysisComp_AnalysisRequested(object sender, EventArgs e)
+        {
+            if (_filmDoseMap == null)
+            {
+                System.Windows.MessageBox.Show("Please generate a Film Dose Map first (Calibration tab) or Import one.");
+                return;
+            }
+            AnalysisComp.SetFilmDose(_filmDoseMap, _filmDpiX, _filmDpiY);
+        }
+
+        private void AnalysisComp_PlanRequested(object sender, EventArgs e)
+        {
+            if (_importedPlanDose != null)
+            {
+                AnalysisComp.SetPlanDose(_importedPlanDose, 
+                                       _importedPlanDpiX, _importedPlanDpiY,
+                                       _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ,
+                                       _importedPlanOriginX, _importedPlanOriginY,
+                                       _importedPlanSpacingYSign, _importedPlanOrientation);
+                StatusText.Text = "Imported Plan Dose Synced!";
+                StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
+            }
+            else
+            {
+                System.Windows.MessageBox.Show("No imported DICOM Dose Map found. If you have a volume open, please use 'Extract Plane' in the Dicom View tab first.", "Sync Plan Dicom");
+            }
+        }
+
+        private void DicomViewer_DosePlaneExtracted(object sender, DoseExtractedEventArgs e)
+        {
+            if (e.DoseMap == null) return;
+
+            // Send to Analysis Component with full coordinate mapping
+            AnalysisComp.SetPlanDose(e.DoseMap, 
+                                   25.4 / e.SpacingX, 
+                                   25.4 / e.SpacingY,
+                                   e.RefX, e.RefY, e.RefZ,
+                                   e.OriginX, e.OriginY,
+                                   e.SpacingYSign,
+                                   e.PlaneOrientation);
+
+            // Switching to Analysis Tab now handled by UI
+            MenuSelectAnalysis_Click(null, null);
+
+            StatusText.Text = "Plan Dose Extracted to Analysis!";
+            StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
         }
 
         private void JawSizeMenu_Click(object sender, RoutedEventArgs e)
@@ -701,7 +783,7 @@ namespace FilmAnalysis
 
             try
             {
-                var dlg = new JawSizeWindow(_doseMap, _tiffDpi, _settings)
+                var dlg = new JawSizeWindow(_doseMap, _dpiX, _settings)
                 {
                     Owner = this
                 };
@@ -1227,6 +1309,7 @@ namespace FilmAnalysis
         {
             if (_isShowingDoseMap && _doseMap != null)
             {
+                _filmDoseMap = _doseMap; // Sync the background analysis dose map to include any applied filters/transforms
                 MainDisplayImage.Source = GenerateDoseHeatmap();
             }
             else if (_redChannel != null)
@@ -1529,10 +1612,11 @@ namespace FilmAnalysis
                 });
 
                 _imgWidth = newW; _imgHeight = newH;
-                _tiffDpi *= scale; // Maintain physical dimensions by scaling DPI
+                _dpiX *= scale; 
+                _dpiY *= scale; // Maintain physical dimensions by scaling DPI
 
                 UpdateCropUI();
-                MetaDPI.Text = _tiffDpi.ToString("F1"); // Update UI Metadata
+                MetaDPI.Text = _dpiX == _dpiY ? _dpiX.ToString("F1") : $"{_dpiX:F1}x{_dpiY:F1}"; // Update UI Metadata
 
                 RefreshDisplay();
                 StatusText.Text = $"Interpolated to {newW}x{newH} ({method})";
@@ -2023,8 +2107,8 @@ namespace FilmAnalysis
 
                     Point startPixel = ControlToPixel(_startPoint);
                     Point endPixel = ControlToPixel(pos);
-                    double wmm = Math.Abs(startPixel.X - endPixel.X) * 25.4 / _tiffDpi;
-                    double hmm = Math.Abs(startPixel.Y - endPixel.Y) * 25.4 / _tiffDpi;
+                    double wmm = Math.Abs(startPixel.X - endPixel.X) * 25.4 / _dpiX;
+                    double hmm = Math.Abs(startPixel.Y - endPixel.Y) * 25.4 / _dpiY;
                     double areamm2 = wmm * hmm;
 
                     MeasurementLabelText.Text = $"{wmm:F1}x{hmm:F1} mm\n{areamm2:N1} mm²";
@@ -2161,10 +2245,10 @@ namespace FilmAnalysis
             }
 
             double[] xDistances = new double[width];
-            for (int x = 0; x < width; x++) xDistances[x] = (x - centerX) * 25.4 / _tiffDpi;
+            for (int x = 0; x < width; x++) xDistances[x] = (x - centerX) * 25.4 / _dpiX;
 
             double[] yDistances = new double[height];
-            for (int y = 0; y < height; y++) yDistances[y] = (y - centerY) * 25.4 / _tiffDpi;
+            for (int y = 0; y < height; y++) yDistances[y] = (y - centerY) * 25.4 / _dpiY;
 
             MainPlot.Plot.Clear();
             
@@ -2195,7 +2279,7 @@ namespace FilmAnalysis
             if (MainDisplayImage.Source == null) return;
 
             // Identify the mode
-            if (sender is System.Windows.Controls.Button btn)
+            if (sender is FrameworkElement btn)
             {
                 if (btn.Name == "DistanceButton") _activeMeasurementMode = MeasurementMode.Distance;
                 else if (btn.Name == "AreaButton")
@@ -2356,13 +2440,14 @@ namespace FilmAnalysis
                             $"Avg Blue:  {avgB:F1}" + doseMsg,
                             "Measurement Results");
                         
-                        _isMeasurementMode = false;
-                        _isSelectingROI = false;
-                        ROIModeOverlay.Visibility = Visibility.Collapsed;
-                        SelectionRect.Visibility = Visibility.Collapsed;
-
-                        StatusText.Text = "Ready";
-                        StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+                        if (_activeMeasurementMode != MeasurementMode.ROIDose)
+                        {
+                            _isMeasurementMode = false;
+                            _isSelectingROI = false;
+                            ROIModeOverlay.Visibility = Visibility.Collapsed;
+                            StatusText.Text = "Ready";
+                            StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+                        }
                     }
                     else
                     {
@@ -2416,13 +2501,15 @@ namespace FilmAnalysis
             // mm per display pixel (based on the film's current scaling factor)
             System.Windows.Rect bounds = GetRenderedImageBounds(MainDisplayImage);
             if (bounds.Width <= 0) return;
-            
-            double mm_per_pixel = 25.4 / _tiffDpi;
-            double display_pixels_per_mm = bounds.Width / (_imgWidth * mm_per_pixel);
+
+            double mm_per_pixel_X = 25.4 / _dpiX;
+            double mm_per_pixel_Y = 25.4 / _dpiY;
+            double display_pixels_per_mm_X = bounds.Width / (_imgWidth * mm_per_pixel_X);
+            double display_pixels_per_mm_Y = bounds.Height / (_imgHeight * mm_per_pixel_Y);
 
             // Coordinates relative to the Panel Center
-            double mmX = (mPos.X - centerX) / display_pixels_per_mm;
-            double mmY = (mPos.Y - centerY) / display_pixels_per_mm;
+            double mmX = (mPos.X - centerX) / display_pixels_per_mm_X;
+            double mmY = (mPos.Y - centerY) / display_pixels_per_mm_Y;
 
             try { 
                 if (CoordText != null)
@@ -2444,8 +2531,10 @@ namespace FilmAnalysis
                 System.Windows.Rect bounds = GetRenderedImageBounds(MainDisplayImage);
                 if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
-                double mm_per_pixel = 25.4 / _tiffDpi;
-                double display_pixels_per_mm = bounds.Width / (_imgWidth * mm_per_pixel);
+                double mm_per_pixel_X = 25.4 / _dpiX;
+                double mm_per_pixel_Y = 25.4 / _dpiY;
+                double display_pixels_per_mm_X = bounds.Width / (_imgWidth * mm_per_pixel_X);
+                double display_pixels_per_mm_Y = bounds.Height / (_imgHeight * mm_per_pixel_Y);
 
                 var rulerBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(200, 0, 0, 0));
                 var minorBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(120, 100, 100, 100));
@@ -2465,7 +2554,7 @@ namespace FilmAnalysis
 
                 for (double mm = -500; mm <= 500; mm += 1.0)
                 {
-                    double x = centerX + (mm * display_pixels_per_mm);
+                    double x = centerX + (mm * display_pixels_per_mm_X);
                     if (x < 0 || x > canvasW) continue;
 
                     bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
@@ -2489,7 +2578,7 @@ namespace FilmAnalysis
 
                 for (double mm = -500; mm <= 500; mm += 1.0)
                 {
-                    double y = centerY + (mm * display_pixels_per_mm);
+                    double y = centerY + (mm * display_pixels_per_mm_Y);
                     if (y < 0 || y > canvasH) continue;
 
                     bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
@@ -2599,10 +2688,16 @@ namespace FilmAnalysis
                 ShowDoseToggle.IsChecked = true;
                 ShowDoseToggle.IsEnabled = true;
 
+                // Sync to analysis-ready film backup
+                _filmDoseMap = _doseMap;
+                _filmDpiX = _dpiX;
+                _filmDpiY = _dpiY;
+
                 double maxDose = 0.001;
                 foreach (var d in _doseMap) if (d > maxDose) maxDose = d;
                 DoseRangeText.Text = $"0.0 - {maxDose:F2} cGy";
 
+                UpdateRulers(); // Update rulers after dose conversion
                 StatusText.Text = "Conversion Complete";
                 StatusIndicator.Background = new SolidColorBrush(Colors.Green);
             }
@@ -2634,7 +2729,8 @@ namespace FilmAnalysis
                     using (var writer = new System.IO.StreamWriter(dlg.FileName))
                     {
                         writer.WriteLine($"Date: {DateTime.Now:yyyy-MM-dd}");
-                        writer.WriteLine($"DPI: {_tiffDpi:F1}");
+                        writer.WriteLine($"DPI_X: {_dpiX:F1}");
+                        writer.WriteLine($"DPI_Y: {_dpiY:F1}");
                         writer.WriteLine($"Interpolation: 1");
                         writer.WriteLine($"X Res: {_imgWidth}");
                         writer.WriteLine($"Y Res: {_imgHeight}");
@@ -2665,41 +2761,41 @@ namespace FilmAnalysis
             }
         }
 
-        private void ImportDoseMap_Click(object sender, RoutedEventArgs e)
+        private async void ImportDoseMap_Click(object sender, RoutedEventArgs e)
         {
             var dlg = new OpenFileDialog { Filter = "Text Files|*.txt|All Files|*.*" };
             if (dlg.ShowDialog() == true)
             {
                 try
                 {
+                    // 1. Choice Dialog: Film vs DICOM
+                    var choicePanel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+                    choicePanel.Children.Add(new System.Windows.Controls.TextBlock { Text = "Which role should this Dose Map take?", Margin = new Thickness(0,0,0,10) });
+                    
+                    var choiceDialog = new ContentDialog { 
+                        Title = "Dose Map Role", 
+                        Content = choicePanel,
+                        PrimaryButtonText = "Film (Measured)",
+                        SecondaryButtonText = "DICOM (Planned)",
+                        CloseButtonText = "Cancel"
+                    };
+
+                    var result = await _dialogService.ShowAsync(choiceDialog, CancellationToken.None);
+                    if (result == ContentDialogResult.None) return;
+
+                    bool isFilm = result == ContentDialogResult.Primary;
+
                     using (var reader = new System.IO.StreamReader(dlg.FileName))
                     {
                         // Parse header
                         string? line;
                         double dpi = 72;
                         int width = 0, height = 0;
+                        double ox = 0, oy = 0, rx = 0, ry = 0, rz = 0;
+                        double sySign = 1.0;
+                        string orientation = "Z";
 
-                        // Read 5 header lines
-                        for (int i = 0; i < 5; i++)
-                        {
-                            line = reader.ReadLine();
-                            if (string.IsNullOrEmpty(line)) continue;
-                            var parts = line.Split(':');
-                            if (parts.Length < 2) continue;
-                            var key = parts[0].Trim();
-                            var val = parts[1].Trim();
-                            if (key.Contains("DPI")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out dpi);
-                            else if (key.Contains("X Res")) int.TryParse(val, out width);
-                            else if (key.Contains("Y Res")) int.TryParse(val, out height);
-                        }
-
-                        if (width == 0 || height == 0)
-                        {
-                            System.Windows.MessageBox.Show("Invalid header format (Width or Height is zero).");
-                            return;
-                        }
-
-                        // Look for Array Start:
+                        // Read header lines until Array Start
                         bool foundStart = false;
                         while ((line = reader.ReadLine()) != null)
                         {
@@ -2708,15 +2804,32 @@ namespace FilmAnalysis
                                 foundStart = true;
                                 break; 
                             }
+                            
+                            if (string.IsNullOrWhiteSpace(line)) continue;
+                            var parts = line.Split(':');
+                            if (parts.Length < 2) continue;
+                            var key = parts[0].Trim();
+                            var val = parts[1].Trim();
+                            
+                            if (key.Contains("DPI")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out dpi);
+                            else if (key.Contains("X Res")) int.TryParse(val, out width);
+                            else if (key.Contains("Y Res")) int.TryParse(val, out height);
+                            else if (key.Contains("Origin_X")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ox);
+                            else if (key.Contains("Origin_Y")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out oy);
+                            else if (key.Contains("Ref_X")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out rx);
+                            else if (key.Contains("Ref_Y")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ry);
+                            else if (key.Contains("Ref_Z")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out rz);
+                            else if (key.Contains("Plane_Orientation")) orientation = val;
+                            else if (key.Contains("Spacing_Y_Sign")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out sySign);
                         }
 
-                        if (!foundStart)
+                        if (!foundStart || width <= 0 || height <= 0)
                         {
-                            System.Windows.MessageBox.Show("Could not find 'Array Start:' marker.");
+                            System.Windows.MessageBox.Show("Invalid header format or could not find Array Start.");
                             return;
                         }
 
-                        _doseMap = new double[height, width];
+                        double[,] importedDose = new double[height, width];
                         for (int y = 0; y < height; y++)
                         {
                             line = reader.ReadLine();
@@ -2724,22 +2837,41 @@ namespace FilmAnalysis
                             var values = line.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
                             for (int x = 0; x < width && x < values.Length; x++)
                             {
-                                double.TryParse(values[x], NumberStyles.Any, CultureInfo.InvariantCulture, out _doseMap[y, x]);
+                                double.TryParse(values[x], NumberStyles.Any, CultureInfo.InvariantCulture, out importedDose[y, x]);
                             }
                         }
 
-                        _imgWidth = width;
-                        _imgHeight = height;
-                        _tiffDpi = dpi;
-                        _isShowingDoseMap = true;
+                        if (isFilm)
+                        {
+                            _doseMap = importedDose;
+                            _filmDoseMap = importedDose;
+                            _imgWidth = width;
+                            _imgHeight = height;
+                            _dpiX = _dpiY = dpi;
+                            _filmDpiX = _filmDpiY = dpi;
+                            _isShowingDoseMap = true;
 
-                        UpdateImageMetadata(dlg.FileName, width, height, dpi);
-                        MainDisplayImage.Source = GenerateDoseHeatmap();
-                        ShowDoseToggle.IsChecked = true;
-                        ShowDoseToggle.IsEnabled = true;
-                        UpdateRulers();
+                            UpdateImageMetadata(dlg.FileName, width, height, dpi);
+                            MainDisplayImage.Source = GenerateDoseHeatmap();
+                            ShowDoseToggle.IsChecked = true;
+                            ShowDoseToggle.IsEnabled = true;
+                            UpdateRulers();
+                            StatusText.Text = "Film Dose Map Imported";
+                        }
+                        else
+                        {
+                            _importedPlanDose = importedDose;
+                            _importedPlanDpiX = _importedPlanDpiY = dpi;
+                            _importedPlanOriginX = ox;
+                            _importedPlanOriginY = oy;
+                            _importedPlanRefX = rx;
+                            _importedPlanRefY = ry;
+                            _importedPlanRefZ = rz;
+                            _importedPlanSpacingYSign = sySign;
+                            _importedPlanOrientation = orientation;
+                            StatusText.Text = "DICOM Dose Map Imported (Ready for Analysis)";
+                        }
 
-                        StatusText.Text = "Dose Map Imported";
                         StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
                     }
                 }
@@ -2836,7 +2968,7 @@ namespace FilmAnalysis
                 }
             });
 
-            return BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
+            return BitmapSource.Create(w, h, _dpiX, _dpiY, PixelFormats.Bgra32, null, pixels, stride);
         }
 
         private (byte R, byte G, byte B) GetColorFromMap(double v, string mapName)
@@ -2922,7 +3054,7 @@ namespace FilmAnalysis
             double dx = p1.X - p2.X;
             double dy = p1.Y - p2.Y;
             double pixelDist = Math.Sqrt(dx * dx + dy * dy);
-            return pixelDist * 25.4 / _tiffDpi;
+            return pixelDist * 25.4 / _dpiX;
         }
 
         private double CalculateArea(List<Point> points)
@@ -2937,7 +3069,7 @@ namespace FilmAnalysis
                 j = i;
             }
             double areaPixels2 = Math.Abs(area / 2.0);
-            double factor = 25.4 / _tiffDpi;
+            double factor = 25.4 / _dpiX;
             return areaPixels2 * factor * factor;
         }
 

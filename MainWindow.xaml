@@ -282,7 +282,8 @@
 
                     <!-- Main Display (Centered) -->
                     <Border x:Name="MainDisplay" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="10" CornerRadius="8" Margin="10,0,10,0">
-                        <Grid x:Name="MasterImageContainer">                            <Grid.RowDefinitions>
+                        <Grid x:Name="MasterImageContainer">
+                            <Grid.RowDefinitions>
                                 <RowDefinition Height="30" />
                                 <RowDefinition Height="*" />
                                 <RowDefinition Height="30" />
@@ -521,9 +522,12 @@
 
             <!-- Dicom View Tab -->
             <TabItem Header="Dicom View">
-                <Grid Margin="12">
-                    <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="20">Dicom View content placeholder</TextBlock>
-                </Grid>
+                <local:DicomControl x:Name="DicomViewer" DosePlaneExtracted="DicomViewer_DosePlaneExtracted" />
+            </TabItem>
+
+            <!-- Analysis Tab -->
+            <TabItem Header="Analysis">
+                <local:AnalysisControl x:Name="AnalysisComp" AnalysisRequested="AnalysisComp_AnalysisRequested" />
             </TabItem>
         </TabControl>
 
@@ -533,44 +537,55 @@
                 <!-- Navigation (Left Aligned) -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                     <ui:Button x:Name="NavCalibrationButton" 
-                              Content="Calibration" 
-                              Icon="{ui:SymbolIcon AppGeneric24}" 
-                              Width="135" 
-                              Height="30" 
-                              FontSize="9"
-                              VerticalContentAlignment="Center"
-                              Margin="0,0,5,0"
-                              Appearance="Primary"
-                              Click="MenuSelectCalibration_Click" />
+                               Content="Calibration" 
+                               Icon="{ui:SymbolIcon AppGeneric24}" 
+                               Width="110" 
+                               Height="30" 
+                               FontSize="9"
+                               VerticalContentAlignment="Center"
+                               Margin="0,0,5,0"
+                               Appearance="Primary"
+                               Click="MenuSelectCalibration_Click" />
 
                     <ui:Button x:Name="NavDicomButton" 
-                              Content="Dicom View" 
-                              Icon="{ui:SymbolIcon ImageMultiple24}" 
-                              Width="135" 
-                              Height="30" 
-                              FontSize="9"
-                              VerticalContentAlignment="Center"
-                              Margin="0,0"
-                              Appearance="Secondary"
-                              Click="MenuSelectDicom_Click" />
+                               Content="Dicom View" 
+                               Icon="{ui:SymbolIcon Cube24}" 
+                               Width="110" 
+                               Height="30" 
+                               FontSize="9"
+                               VerticalContentAlignment="Center"
+                               Margin="0,0,5,0"
+                               Appearance="Secondary"
+                               Click="MenuSelectDicom_Click" />
+
+                    <ui:Button x:Name="NavAnalysisButton" 
+                               Content="Analysis" 
+                               Icon="{ui:SymbolIcon ChartMultiple24}" 
+                               Width="110" 
+                               Height="30" 
+                               FontSize="9"
+                               VerticalContentAlignment="Center"
+                               Margin="0,0"
+                               Appearance="Secondary"
+                               Click="MenuSelectAnalysis_Click" />
                 </StackPanel>
 
                 <!-- Coordinates and Status (Right Aligned) -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <TextBlock x:Name="CoordText" Text="0.0, 0.0 mm" Margin="0,0,15,0" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
-                <Border x:Name="StatusIndicator" 
-                        HorizontalAlignment="Right" 
-                        VerticalAlignment="Center" 
-                        Padding="15,4" 
-                        Background="#FFFF4500"
-                        MinWidth="120">
-                    <TextBlock x:Name="StatusText" 
-                              Text="Not Ready!" 
-                              Foreground="White" 
-                              FontWeight="Bold" 
-                              FontSize="10"
-                              HorizontalAlignment="Center" />
-                </Border>
+                    <Border x:Name="StatusIndicator" 
+                            HorizontalAlignment="Right" 
+                            VerticalAlignment="Center" 
+                            Padding="15,4" 
+                            Background="#FFFF4500"
+                            MinWidth="120">
+                        <TextBlock x:Name="StatusText" 
+                                   Text="Not Ready!" 
+                                   Foreground="White" 
+                                   FontWeight="Bold" 
+                                   FontSize="10"
+                                   HorizontalAlignment="Center" />
+                    </Border>
                 </StackPanel>
             </Grid>
         </Border>
