@@ -21,6 +21,9 @@
             <!-- Stable Footer -->
         </Grid.RowDefinitions>
 
+        <!-- Root host for dialogs -->
+        <ContentPresenter x:Name="RootContentDialogPresenter" Grid.RowSpan="3" Panel.ZIndex="1001" />
+
         <!-- Compact Top Header Area (Title + Menu + Window Controls) -->
         <Grid Grid.Row="0" Background="Transparent">
             <!-- 1. Background TitleBar: Handles window dragging and menus -->
@@ -197,11 +200,66 @@
 
                     <!-- Main Display (Centered) -->
                     <Border x:Name="MainDisplay" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="10" CornerRadius="8" Margin="10,0,10,0">
-                        <Grid x:Name="ImageGrid">
-                            <Image x:Name="MainDisplayImage" Stretch="Uniform" MouseDown="Image_MouseDown" MouseMove="Image_MouseMove" MouseUp="Image_MouseUp" />
-                            <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False" Background="Transparent">
-                                <Rectangle x:Name="SelectionRect" Stroke="Red" StrokeThickness="2" Visibility="Collapsed" />
+                        <Grid x:Name="MasterImageContainer">                            <Grid.RowDefinitions>
+                                <RowDefinition Height="30" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="30" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="40" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="40" />
+                            </Grid.ColumnDefinitions>
+                            
+                            <!-- Ruler Bar Backgrounds (Framing the image) -->
+                            <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Background="#F3F3F3" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,0,0,1" Panel.ZIndex="5" Opacity="0.7" />
+                            <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Background="#F3F3F3" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Panel.ZIndex="5" Opacity="0.7" />
+                            <Border Grid.Row="1" Grid.Column="0" Background="#F3F3F3" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,0,1,0" Panel.ZIndex="5" Opacity="0.7" />
+                            <Border Grid.Row="1" Grid.Column="2" Background="#F3F3F3" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1,0,0,0" Panel.ZIndex="5" Opacity="0.7" />
+
+                            <TextBlock Text="mm" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Panel.ZIndex="11" />
+                            
+                            <Canvas x:Name="TopRulerCanvas" Grid.Row="0" Grid.Column="1" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Panel.ZIndex="10" ClipToBounds="True" />
+                            <Canvas x:Name="BottomRulerCanvas" Grid.Row="2" Grid.Column="1" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Panel.ZIndex="10" ClipToBounds="True" />
+                            <Canvas x:Name="LeftRulerCanvas" Grid.Row="1" Grid.Column="0" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Panel.ZIndex="10" ClipToBounds="True" />
+                            <Canvas x:Name="RightRulerCanvas" Grid.Row="1" Grid.Column="2" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Panel.ZIndex="10" ClipToBounds="True" />
+
+                            <Grid x:Name="ImageGrid" Grid.Row="1" Grid.Column="1" Background="Transparent">
+                            <Image x:Name="MainDisplayImage" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" 
+                                   MouseDown="Image_MouseDown" MouseMove="Image_MouseMove" MouseUp="Image_MouseUp" />
+                            <Canvas x:Name="SelectionCanvas" 
+                                    IsHitTestVisible="True" 
+                                    Background="Transparent"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Stretch"
+                                    MouseDown="Image_MouseDown" 
+                                    MouseMove="Image_MouseMove" 
+                                    MouseUp="Image_MouseUp">
+                                <Grid x:Name="ZeroAnchor" IsHitTestVisible="False" Opacity="0.15" Panel.ZIndex="1">
+                                    <Line X1="0" X2="20" Y1="0" Y2="0" Stroke="Black" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <Line X1="0" X2="0" Y1="0" Y2="20" Stroke="Black" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+
+                                <Rectangle x:Name="SelectionRect" 
+                                           Stroke="#FFFFFFFF" 
+                                           StrokeThickness="1" 
+                                           Fill="#CCFF0000" 
+                                           Visibility="Collapsed" />
+                                <!-- Crosshairs for Fixed ROI -->
+                                 <Line x:Name="SelectionCrosshairH" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
+                                <Line x:Name="SelectionCrosshairV" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
                             </Canvas>
+
+                            <!-- ROI Control Overlay -->
+                            <StackPanel x:Name="ROIModeOverlay" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="15" Visibility="Collapsed">
+                                <Border Background="#CC2D2D2D" CornerRadius="20" Padding="15,8" BorderBrush="#66FFFFFF" BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="ROI TOOL ACTIVE" VerticalAlignment="Center" Foreground="White" FontWeight="Bold" Margin="0,0,15,0" FontSize="11" />
+                                        <ui:Button Content="Exit ROI Mode" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Danger" Click="ExitROIMode_Click" Height="30" Padding="15,0" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                            </Grid>
                         </Grid>
                     </Border>
 
@@ -310,7 +368,34 @@
                             </TabItem>
                         </TabControl>
 
-                        <ui:DataGrid x:Name="CalibrationGrid" Grid.Row="1" d:ItemsSource="{d:SampleData ItemCount=5}" Margin="0,0,0,10" SelectionChanged="DataGrid_SelectionChanged" />
+                        <Grid Grid.Row="1" Margin="0,0,0,10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <ui:DataGrid x:Name="CalibrationGrid" 
+                                         Grid.Row="0"
+                                         d:ItemsSource="{d:SampleData ItemCount=5}" 
+                                         VerticalAlignment="Stretch"
+                                         SelectionMode="Extended"
+                                         SelectionChanged="DataGrid_SelectionChanged">
+                                <ui:DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Delete Selected" Click="DeleteSelected_Click" Icon="{ui:SymbolIcon Dismiss24}" />
+                                    </ContextMenu>
+                                </ui:DataGrid.ContextMenu>
+                            </ui:DataGrid>
+                            
+                            <ui:Button x:Name="DeleteRowButton" 
+                                       Grid.Row="1" 
+                                       Content="Delete Selected Rows" 
+                                       Icon="{ui:SymbolIcon Dismiss24}" 
+                                       Width="310" 
+                                       Margin="0,10,0,0" 
+                                       HorizontalAlignment="Center"
+                                       Appearance="Secondary" 
+                                       Click="DeleteSelected_Click" />
+                        </Grid>
 
                         <Border x:Name="ProfileY" Grid.Row="2" Height="150" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="5" CornerRadius="8" Margin="0,0,0,10">
                             <TextBlock Text="Profile Y" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
@@ -361,7 +446,9 @@
                               Click="MenuSelectDicom_Click" />
                 </StackPanel>
 
-                <!-- Status (Right Aligned) -->
+                <!-- Coordinates and Status (Right Aligned) -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock x:Name="CoordText" Text="0.0, 0.0 mm" Margin="0,0,15,0" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
                 <Border x:Name="StatusIndicator" 
                         HorizontalAlignment="Right" 
                         VerticalAlignment="Center" 
@@ -375,6 +462,7 @@
                               FontSize="10"
                               HorizontalAlignment="Center" />
                 </Border>
+                </StackPanel>
             </Grid>
         </Border>
     </Grid>
