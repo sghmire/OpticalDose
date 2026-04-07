@@ -60,6 +60,12 @@ namespace FilmAnalysis
         public double LastPlateauX { get; set; } = 20;
         public double LastPlateauY { get; set; } = 20;
         public string LastJawMethod { get; set; } = "Maximum";
+
+        // Advanced Gamma Engine Settings
+        public double GammaUncertainty { get; set; } = 2.0;
+        public double GammaSearchStep { get; set; } = 0.1;
+        public double GammaSmoothingSigma { get; set; } = 0.0;
+        public bool GammaUseBicubic { get; set; } = true;
     }
 
     public class CalibrationPoint
@@ -99,7 +105,7 @@ namespace FilmAnalysis
         // Crop / ROI Filter State
         private bool _isCropping = false;
         private bool _isROIFiltering = false;
-        private AppSettings _settings = new AppSettings();
+        public AppSettings _settings = new AppSettings();
 
         // Measurement State
         private enum MeasurementMode { None, ROIDose, Distance, Area }
@@ -151,6 +157,10 @@ namespace FilmAnalysis
             // Consolidate Sync logic in code-behind for reliability
             AnalysisComp.AnalysisRequested += AnalysisComp_SyncRequested;
             AnalysisComp.PlanRequested += AnalysisComp_SyncRequested;
+            
+            // Global Progress Reporting
+            AnalysisComp.ProgressUpdate += (v) => GlobalProgressBar.Value = v;
+            AnalysisComp.ProgressActive += (active) => GlobalProgressBar.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
             
             LoadSettings();
 
@@ -263,48 +273,87 @@ namespace FilmAnalysis
 
         private async void Settings_Click(object sender, RoutedEventArgs e)
         {
-            var stackPanel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
-            
-            stackPanel.Children.Add(new System.Windows.Controls.TextBlock { 
-                Text = "Calibration Configuration Folder", 
-                FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(0,0,0,5) 
+            var tabControl = new System.Windows.Controls.TabControl { 
+                Background = Brushes.Transparent, 
+                BorderThickness = new Thickness(0),
+                Margin = new Thickness(-10) // Negative margin to fill ContentDialog space
+            };
+
+            // --- Tab 1: General ---
+            var generalStack = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
+            generalStack.Children.Add(new System.Windows.Controls.TextBlock { 
+                Text = "Calibration Data Path", 
+                Style = (Style)this.FindResource("DosimetrySectionHeader"),
+                Margin = new Thickness(0,0,0,10) 
             });
 
-            var grid = new System.Windows.Controls.Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var pathGrid = new System.Windows.Controls.Grid();
+            pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var pathInput = new System.Windows.Controls.TextBox { 
                 Text = _calibrationsFolder, 
                 IsReadOnly = true,
-                Margin = new Thickness(0,0,5,0)
+                Margin = new Thickness(0,0,10,0)
             };
             
-            var browseBtn = new Wpf.Ui.Controls.Button { 
-                Content = "Browse...", 
-                Padding = new Thickness(10,5,10,5)
-            };
-
+            var browseBtn = new Wpf.Ui.Controls.Button { Content = "Browse..." };
             browseBtn.Click += (s, ev) => {
                 var dlg = new Microsoft.Win32.OpenFolderDialog();
                 dlg.InitialDirectory = _calibrationsFolder;
-                if (dlg.ShowDialog() == true)
-                {
-                    ((System.Windows.Controls.TextBox)pathInput).Text = dlg.FolderName;
-                }
+                if (dlg.ShowDialog() == true) { pathInput.Text = dlg.FolderName; }
             };
 
             System.Windows.Controls.Grid.SetColumn(pathInput, 0);
             System.Windows.Controls.Grid.SetColumn(browseBtn, 1);
-            grid.Children.Add(pathInput);
-            grid.Children.Add(browseBtn);
-            stackPanel.Children.Add(grid);
+            pathGrid.Children.Add(pathInput);
+            pathGrid.Children.Add(browseBtn);
+            generalStack.Children.Add(pathGrid);
+
+            var generalTab = new System.Windows.Controls.TabItem { Header = "General", Content = generalStack };
+            tabControl.Items.Add(generalTab);
+
+            // --- Tab 2: Gamma Engine ---
+            var gammaStack = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
+            
+            // Uncertainty
+            gammaStack.Children.Add(new System.Windows.Controls.TextBlock { 
+                Text = "Dose Uncertainty Factor (%)", 
+                Style = (Style)this.FindResource("DosimetrySectionHeader"),
+                Margin = new Thickness(0,0,0,5) 
+            });
+            var uncInput = new Wpf.Ui.Controls.NumberBox { Value = _settings.GammaUncertainty, Minimum = 0, Maximum = 10, SmallChange = 0.1, Margin = new Thickness(0,0,0,15) };
+            gammaStack.Children.Add(uncInput);
+
+            // Search Step
+            gammaStack.Children.Add(new System.Windows.Controls.TextBlock { 
+                Text = "Sub-pixel Search Resolution (px)", 
+                Style = (Style)this.FindResource("DosimetrySectionHeader"),
+                Margin = new Thickness(0,0,0,5) 
+            });
+            var stepInput = new Wpf.Ui.Controls.NumberBox { Value = _settings.GammaSearchStep, Minimum = 0.01, Maximum = 0.5, SmallChange = 0.05, Margin = new Thickness(0,0,0,15) };
+            gammaStack.Children.Add(stepInput);
+
+            // Smoothing
+            gammaStack.Children.Add(new System.Windows.Controls.TextBlock { 
+                Text = "Pre-Analysis Film Smoothing (mm)", 
+                Style = (Style)this.FindResource("DosimetrySectionHeader"),
+                Margin = new Thickness(0,0,0,5) 
+            });
+            var smoothInput = new Wpf.Ui.Controls.NumberBox { Value = _settings.GammaSmoothingSigma, Minimum = 0, Maximum = 2.0, SmallChange = 0.1, Margin = new Thickness(0,0,0,15) };
+            gammaStack.Children.Add(smoothInput);
+
+            // Interpolation Mode
+            var bicubicCheck = new System.Windows.Controls.CheckBox { Content = "Use Bicubic Interpolation (Recommended)", IsChecked = _settings.GammaUseBicubic, Margin = new Thickness(0,0,0,5) };
+            gammaStack.Children.Add(bicubicCheck);
+
+            var gammaTab = new System.Windows.Controls.TabItem { Header = "Gamma Engine", Content = gammaStack };
+            tabControl.Items.Add(gammaTab);
 
             var dialog = new ContentDialog(_dialogService.GetContentPresenter())
             {
                 Title = "Application Settings",
-                Content = stackPanel,
+                Content = tabControl,
                 PrimaryButtonText = "Save",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary
@@ -315,6 +364,13 @@ namespace FilmAnalysis
             {
                 _settings.CalibrationsPath = pathInput.Text;
                 _calibrationsFolder = _settings.CalibrationsPath;
+                
+                // Save Gamma Settings
+                _settings.GammaUncertainty = uncInput.Value ?? 2.0;
+                _settings.GammaSearchStep = stepInput.Value ?? 0.1;
+                _settings.GammaSmoothingSigma = smoothInput.Value ?? 0.0;
+                _settings.GammaUseBicubic = bicubicCheck.IsChecked ?? true;
+
                 if (!System.IO.Directory.Exists(_calibrationsFolder))
                 {
                     try { System.IO.Directory.CreateDirectory(_calibrationsFolder); } catch { }
@@ -323,6 +379,61 @@ namespace FilmAnalysis
                 RefreshConfigs();
                 StatusText.Text = "Settings Updated";
             }
+        }
+
+        private async void About_Click(object sender, RoutedEventArgs e)
+        {
+            var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+
+            try
+            {
+                var img = new System.Windows.Controls.Image
+                {
+                    Source = new BitmapImage(new Uri("pack://application:,,,/Icon.png")),
+                    Width = 64,
+                    Height = 64,
+                    Margin = new Thickness(0, 0, 0, 10),
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+                stack.Children.Add(img);
+            }
+            catch { /* Skip icon if not found */ }
+
+            stack.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "Film Tools",
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 5)
+            });
+
+            stack.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "Version 1.0.0",
+                FontSize = 14,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 20)
+            });
+
+            stack.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "A professional suite for film dosimetry and analysis.\nDeveloped for clinical precision and efficiency.",
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 10),
+                Foreground = (Brush)FindResource("TextFillColorSecondaryBrush")
+            });
+
+            var dialog = new ContentDialog(_dialogService.GetContentPresenter())
+            {
+                Title = "About Film Tools",
+                Content = stack,
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close
+            };
+
+            await dialog.ShowAsync();
         }
 
         private void DataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -722,9 +833,9 @@ namespace FilmAnalysis
 
         private void UpdateNavButtons(int index)
         {
-            if (NavCalibrationButton != null) NavCalibrationButton.Appearance = index == 0 ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
-            if (NavDicomButton != null) NavDicomButton.Appearance = index == 1 ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
-            if (NavAnalysisButton != null) NavAnalysisButton.Appearance = index == 2 ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
+            if (NavCalibrationButton != null) NavCalibrationButton.Tag = index == 0 ? "Active" : "";
+            if (NavDicomButton != null) NavDicomButton.Tag = index == 1 ? "Active" : "";
+            if (NavAnalysisButton != null) NavAnalysisButton.Tag = index == 2 ? "Active" : "";
         }
 
         private void AnalysisComp_SyncRequested(object sender, EventArgs e)
@@ -1115,8 +1226,7 @@ namespace FilmAnalysis
 
             _isAligning = true;
             _alignStep = 1;
-            AlignStepText.Text = "Click LEFT marker (Red)";
-            AlignModeOverlay.Visibility = Visibility.Visible;
+            ShowToolOverlay("Step: Click LEFT marker (Red)");
             StatusText.Text = "Alignment: Pick Left Marker";
             StatusIndicator.Background = new SolidColorBrush(Colors.DodgerBlue);
             SelectionRect.Visibility = Visibility.Collapsed;
@@ -1126,7 +1236,7 @@ namespace FilmAnalysis
         {
             _isAligning = false;
             _alignStep = 0;
-            AlignModeOverlay.Visibility = Visibility.Collapsed;
+            HideToolOverlay();
             AlignMarkerLeft.Visibility = Visibility.Collapsed;
             AlignMarkerRight.Visibility = Visibility.Collapsed;
             AlignMarkerTop.Visibility = Visibility.Collapsed;
@@ -1148,7 +1258,7 @@ namespace FilmAnalysis
                     Canvas.SetTop(AlignMarkerLeft, canvasPoint.Y - 5);
                     AlignMarkerLeft.Visibility = Visibility.Visible;
                     _alignStep = 2;
-                    AlignStepText.Text = "Click RIGHT marker (Blue)";
+                    ShowToolOverlay("Step: Click RIGHT marker (Blue)");
                     StatusText.Text = "Alignment: Pick Right Marker";
                     break;
                 case 2:
@@ -1157,7 +1267,7 @@ namespace FilmAnalysis
                     Canvas.SetTop(AlignMarkerRight, canvasPoint.Y - 5);
                     AlignMarkerRight.Visibility = Visibility.Visible;
                     _alignStep = 3;
-                    AlignStepText.Text = "Click TOP marker (Green)";
+                    ShowToolOverlay("Step: Click TOP marker (Green)");
                     StatusText.Text = "Alignment: Pick Top Marker";
                     break;
                 case 3:
@@ -1220,7 +1330,7 @@ namespace FilmAnalysis
             Canvas.SetLeft(AlignMarkerIso, isoPanelPt.X - 7);
             Canvas.SetTop(AlignMarkerIso, isoPanelPt.Y - 7);
             AlignMarkerIso.Visibility = Visibility.Visible;
-            AlignStepText.Text = $"Isocenter found. Transforming...";
+            ShowToolOverlay("Isocenter found. Transforming...");
             StatusText.Text = $"Iso: ({isoX:F1}, {isoY:F1}) px, Roll: {angle:F2}°";
             await Task.Delay(600);
 
@@ -1415,7 +1525,7 @@ namespace FilmAnalysis
         private void Crop_Click(object sender, RoutedEventArgs e)
         {
             if (_redChannel == null && _doseMap == null) { System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data"); return; }
-
+            ResetToolState();
             string name = (sender as FrameworkElement)?.Name ?? "";
 
             if (name == "ManualCropButton")
@@ -1424,8 +1534,7 @@ namespace FilmAnalysis
                 _isCropping = true;
                 _isSelectingROI = true;
                 _isFixedMode = false;
-                ROIModeOverlay.Visibility = Visibility.Collapsed;
-                AlignModeOverlay.Visibility = Visibility.Collapsed;
+                HideToolOverlay();
                 StatusText.Text = "Draw crop region...";
                 StatusIndicator.Background = new SolidColorBrush(Colors.DodgerBlue);
             }
@@ -1871,6 +1980,8 @@ namespace FilmAnalysis
                 return;
             }
 
+            ResetToolState();
+
             // 1. Create the Dialog Content
             var stackPanel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
             
@@ -1930,7 +2041,7 @@ namespace FilmAnalysis
                 SaveSettings();
 
                 _isSelectingROI = true;
-                ROIModeOverlay.Visibility = Visibility.Visible;
+                ShowToolOverlay("ROI Extraction Active");
 
                 if (_isFixedMode)
                 {
@@ -1952,10 +2063,23 @@ namespace FilmAnalysis
 
         private void ExitROIMode_Click(object sender, RoutedEventArgs e)
         {
+            ResetToolState();
+            
+            StatusText.Text = "ROI Tool Deactivated";
+            StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFF4500"));
+        }
+
+        private void ResetToolState()
+        {
             _isSelectingROI = false;
             _isDrawing = false;
+            _isFixedMode = false;
+            _isCropping = false;
+            _isROIFiltering = false;
             _activeMeasurementMode = MeasurementMode.None;
             _isAreaRectMode = false;
+            _isAligning = false;
+            _isMeasurementMode = false;
 
             SelectionRect.Visibility = Visibility.Collapsed;
             SelectionCrosshairH.Visibility = Visibility.Collapsed;
@@ -1963,10 +2087,27 @@ namespace FilmAnalysis
             MeasurementLine.Visibility = Visibility.Collapsed;
             MeasurementPolyline.Visibility = Visibility.Collapsed;
             MeasurementLabel.Visibility = Visibility.Collapsed;
-            ROIModeOverlay.Visibility = Visibility.Collapsed;
             
-            StatusText.Text = "ROI Tool Deactivated";
-            StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFF4500"));
+            HideToolOverlay();
+        }
+
+        private void ShowToolOverlay(string text)
+        {
+            if (ToolModeOverlay == null || ToolModeText == null) return;
+            ToolModeText.Text = text;
+            ToolModeOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void HideToolOverlay()
+        {
+            if (ToolModeOverlay != null) ToolModeOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void ExitActiveTool_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isAligning) ExitAlignMode_Click(sender, e);
+            else if (_isSelectingROI) ExitROIMode_Click(sender, e);
+            else HideToolOverlay();
         }
 
         private void DeleteSelected_Click(object sender, RoutedEventArgs e)
@@ -2292,6 +2433,8 @@ namespace FilmAnalysis
                 return;
             }
 
+            ResetToolState();
+
             // Identify the mode using direct object comparison (more robust than string Name)
             if (sender == DistanceButton)
             {
@@ -2323,10 +2466,10 @@ namespace FilmAnalysis
             _isCropping = false;
             _isROIFiltering = false;
 
-            ROIModeOverlay.Visibility = Visibility.Visible;
-
             string modeName = _activeMeasurementMode == MeasurementMode.Distance ? "Distance/Line" :
                             _activeMeasurementMode == MeasurementMode.Area ? $"Area ({(_isAreaRectMode ? "Rectangle" : "Freehand")})" : "ROI Dose";
+
+            ShowToolOverlay($"Tool: {modeName}");
 
             StatusText.Text = $"Measurement Mode: {modeName}";
             StatusIndicator.Background = new SolidColorBrush(Colors.MediumPurple);
@@ -2461,7 +2604,7 @@ namespace FilmAnalysis
                         {
                             _isMeasurementMode = false;
                             _isSelectingROI = false;
-                            ROIModeOverlay.Visibility = Visibility.Collapsed;
+                            HideToolOverlay();
                             StatusText.Text = "Ready";
                             StatusIndicator.Background = new SolidColorBrush(Colors.Green);
                         }
@@ -2730,50 +2873,77 @@ namespace FilmAnalysis
         private void ProcessImage() => ConvertToDose_Click(null!, null!);
         private void ExportResults() => ExportDoseMap_Click(null!, null!);
 
-        private void ExportDoseMap_Click(object sender, RoutedEventArgs e)
+        private async void ExportDoseMap_Click(object sender, RoutedEventArgs e)
         {
             if (_doseMap == null)
             {
                 System.Windows.MessageBox.Show("No dose map available to export. Please convert to dose first.");
                 return;
             }
-
+        
             var dlg = new SaveFileDialog { Filter = "Text Files|*.txt|All Files|*.*", FileName = "DoseMap_Export.txt" };
             if (dlg.ShowDialog() == true)
             {
+                StatusText.Text = "Exporting Dose Map...";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Orange);
+                GlobalProgressBar.Value = 0;
+                GlobalProgressBar.Visibility = Visibility.Visible;
+                
+                string fileName = dlg.FileName;
+                double dpiX = _dpiX;
+                double dpiY = _dpiY;
+                int imgW = _imgWidth;
+                int imgH = _imgHeight;
+                double[,] dose = _doseMap;
+        
                 try
                 {
-                    using (var writer = new System.IO.StreamWriter(dlg.FileName))
+                    await Task.Run(() =>
                     {
-                        writer.WriteLine($"Date: {DateTime.Now:yyyy-MM-dd}");
-                        writer.WriteLine($"DPI_X: {_dpiX:F1}");
-                        writer.WriteLine($"DPI_Y: {_dpiY:F1}");
-                        writer.WriteLine($"Interpolation: 1");
-                        writer.WriteLine($"X Res: {_imgWidth}");
-                        writer.WriteLine($"Y Res: {_imgHeight}");
-                        writer.WriteLine();
-                        writer.WriteLine();
-                        writer.WriteLine("Array Start:");
-
-                        for (int y = 0; y < _imgHeight; y++)
+                        using (var writer = new System.IO.StreamWriter(fileName))
                         {
-                            var sb = new StringBuilder();
-                            for (int x = 0; x < _imgWidth; x++)
+                            writer.WriteLine($"Date: {DateTime.Now:yyyy-MM-dd}");
+                            writer.WriteLine($"DPI_X: {dpiX:F1}");
+                            writer.WriteLine($"DPI_Y: {dpiY:F1}");
+                            writer.WriteLine($"Interpolation: 1");
+                            writer.WriteLine($"X Res: {imgW}");
+                            writer.WriteLine($"Y Res: {imgH}");
+                            writer.WriteLine();
+                            writer.WriteLine();
+                            writer.WriteLine("Array Start:");
+        
+                            for (int y = 0; y < imgH; y++)
                             {
-                                sb.Append(_doseMap[y, x].ToString("F4", CultureInfo.InvariantCulture));
-                                if (x < _imgWidth - 1) sb.Append("\t");
+                                var sb = new StringBuilder();
+                                for (int x = 0; x < imgW; x++)
+                                {
+                                    sb.Append(dose[y, x].ToString("F4", CultureInfo.InvariantCulture));
+                                    if (x < imgW - 1) sb.Append("\t");
+                                }
+                                writer.WriteLine(sb.ToString());
+                                
+                                if (y % 20 == 0)
+                                {
+                                    double prog = (double)y / imgH * 100.0;
+                                    Dispatcher.Invoke(() => GlobalProgressBar.Value = prog);
+                                }
                             }
-                            writer.WriteLine(sb.ToString());
+        
+                            writer.WriteLine();
+                            writer.WriteLine(":Array End");
                         }
-
-                        writer.WriteLine();
-                        writer.WriteLine(":Array End");
-                    }
+                    });
+                    
                     StatusText.Text = "Dose Map Exported";
+                    StatusIndicator.Background = new SolidColorBrush(Colors.Green);
                 }
                 catch (Exception ex)
                 {
                     System.Windows.MessageBox.Show($"Error exporting dose map: {ex.Message}");
+                }
+                finally
+                {
+                    GlobalProgressBar.Visibility = Visibility.Collapsed;
                 }
             }
         }
@@ -2846,17 +3016,32 @@ namespace FilmAnalysis
                             return;
                         }
 
+                        StatusText.Text = "Importing Dose Map...";
+                        StatusIndicator.Background = new SolidColorBrush(Colors.Orange);
+                        GlobalProgressBar.Value = 0;
+                        GlobalProgressBar.Visibility = Visibility.Visible;
+
                         double[,] importedDose = new double[height, width];
-                        for (int y = 0; y < height; y++)
+
+                        await Task.Run(() =>
                         {
-                            line = reader.ReadLine();
-                            if (line == null || line.Contains(":Array End")) break;
-                            var values = line.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                            for (int x = 0; x < width && x < values.Length; x++)
+                            for (int y = 0; y < height; y++)
                             {
-                                double.TryParse(values[x], NumberStyles.Any, CultureInfo.InvariantCulture, out importedDose[y, x]);
+                                line = reader.ReadLine();
+                                if (line == null || line.Contains(":Array End")) break;
+                                var values = line.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                for (int x = 0; x < width && x < values.Length; x++)
+                                {
+                                    double.TryParse(values[x], NumberStyles.Any, CultureInfo.InvariantCulture, out importedDose[y, x]);
+                                }
+
+                                if (y % 20 == 0)
+                                {
+                                    double prog = (double)y / height * 100.0;
+                                    Dispatcher.Invoke(() => GlobalProgressBar.Value = prog);
+                                }
                             }
-                        }
+                        });
 
                         if (isFilm)
                         {
@@ -2895,6 +3080,10 @@ namespace FilmAnalysis
                 catch (Exception ex)
                 {
                     System.Windows.MessageBox.Show($"Error importing dose map: {ex.Message}");
+                }
+                finally
+                {
+                    GlobalProgressBar.Visibility = Visibility.Collapsed;
                 }
             }
         }

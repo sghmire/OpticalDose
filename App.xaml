@@ -10,6 +10,67 @@
                 <ui:ThemesDictionary Theme="Light" />
                 <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
+            
+            <!-- Global Dosimetry Blue Palette -->
+            <SolidColorBrush x:Key="DosimetrySelectedBackground" Color="#E3F2FD" />
+            <SolidColorBrush x:Key="DosimetrySelectedBorder" Color="#2196F3" />
+            <SolidColorBrush x:Key="DosimetrySelectedText" Color="#1976D2" />
+            <SolidColorBrush x:Key="DosimetryHeaderBrush" Color="#1976D2" />
+
+            <Style x:Key="DosimetrySectionHeader" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource DosimetryHeaderBrush}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+
+            <!-- Global Tab Styling -->
+            <Style TargetType="TabItem">
+                <Setter Property="HeaderTemplate">
+                    <Setter.Value>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" FontWeight="SemiBold" FontSize="11" />
+                        </DataTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Border x:Name="TabBorder" 
+                                Background="Transparent" 
+                                BorderBrush="Transparent" 
+                                BorderThickness="0,0,0,2" 
+                                Padding="12,8"
+                                Margin="0,0,2,0"
+                                CornerRadius="4,4,0,0"
+                                Cursor="Hand">
+                                <ContentPresenter x:Name="ContentSite"
+                                            ContentSource="Header"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            Focusable="False"
+                                            Margin="8,2" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="TabBorder" Property="Background" Value="#11000000" />
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource DosimetrySelectedBackground}" />
+                                    <Setter TargetName="TabBorder" Property="BorderBrush" Value="{StaticResource DosimetrySelectedBorder}" />
+                                    <Setter Property="Foreground" Value="{StaticResource DosimetrySelectedText}" />
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsSelected" Value="False" />
+                                        <Condition Property="IsMouseOver" Value="False" />
+                                    </MultiTrigger.Conditions>
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </MultiTrigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

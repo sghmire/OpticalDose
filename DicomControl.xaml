@@ -14,7 +14,7 @@
         </Grid.ColumnDefinitions>
 
         <!-- Left Control Panel -->
-        <Border Grid.Column="0" Margin="0,0,10,0" Padding="15" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8">
+        <Border Grid.Column="0" Margin="0,0,10,0" Padding="15" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" /> <!-- Header -->
@@ -25,9 +25,17 @@
 
                 <!-- Header Actions -->
                 <StackPanel Grid.Row="0" Margin="0,0,0,15">
-                    <TextBlock Text="DICOM MPR Viewer" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource AccentFillColorDefaultBrush}" Margin="0,0,0,5" />
+                    <TextBlock Text="DICOM Viewer" Style="{StaticResource DosimetrySectionHeader}" FontSize="18" Margin="0,0,0,5" />
                     <TextBlock x:Name="StatusText" Text="Ready to load DICOM" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,10" />
-                    <ui:Button x:Name="LoadDicomButton" Content="Load DICOM Set (RD/RS/RP)" Icon="{ui:SymbolIcon Open24}" Width="300" Height="40" Appearance="Primary" Click="LoadDicomSet_Click" />
+                    <ui:Button x:Name="LoadDicomButton" 
+                               Content="Load DICOM Set (RD/RS/RP)" 
+                               Icon="{ui:SymbolIcon Open24}" 
+                               Width="300" 
+                               Height="40" 
+                               Appearance="Primary" 
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Click="LoadDicomSet_Click" />
                     
                     <!-- Loaded file indicators -->
                     <StackPanel Margin="0,8,0,0" Orientation="Vertical">
@@ -39,7 +47,7 @@
 
                 <!-- Navigation Sliders -->
                 <StackPanel Grid.Row="1" Margin="0,0,0,15">
-                    <TextBlock Text="Multi-Planar Navigation" FontWeight="Bold" Margin="0,0,0,10" />
+                    <TextBlock Text="Multi-Planar Navigation" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                     
                     <!-- Z Slider (Axial) -->
                     <TextBlock Text="Z-Axis (Superior/Inferior)" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -88,7 +96,7 @@
                         <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,10">
                             <StackPanel>
                                 <Grid Margin="0,0,0,8">
-                                    <TextBlock Text="Coordinate Alignment" FontWeight="Bold" VerticalAlignment="Center" />
+                                    <TextBlock Text="Coordinate Alignment" Style="{StaticResource DosimetrySectionHeader}" VerticalAlignment="Center" />
                                     <ui:ToggleSwitch x:Name="TpsModeToggle" Content="TPS Mode" HorizontalAlignment="Right" IsChecked="True" Click="TpsMode_Checked" />
                                 </Grid>
                                 
@@ -115,7 +123,7 @@
                     <!-- Structure Navigation -->
                     <StackPanel>
                         <Grid Margin="0,0,0,5">
-                            <TextBlock Text="Structures" FontWeight="Bold" VerticalAlignment="Center" />
+                            <TextBlock Text="Structures" Style="{StaticResource DosimetrySectionHeader}" VerticalAlignment="Center" />
                             <ui:ToggleSwitch x:Name="ShowContoursToggle" Content="Show All" HorizontalAlignment="Right" IsChecked="False" Click="ShowContours_Checked" />
                         </Grid>
                         <ComboBox x:Name="StructureCombo" Width="300" DisplayMemberPath="Name" Margin="0,0,0,5" SelectionChanged="StructureCombo_Changed" />
@@ -125,7 +133,7 @@
                     <!-- Extraction -->
                     <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
-                            <TextBlock Text="Extract Plane" FontWeight="Bold" Margin="0,0,0,5" />
+                            <TextBlock Text="Extract Plane" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,5" />
                             <ComboBox x:Name="PlaneCombo" Width="300" SelectedIndex="0" Margin="0,0,0,5">
                                 <ComboBoxItem Content="Axial (Z)" Tag="Z" />
                                 <ComboBoxItem Content="Coronal (Y)" Tag="Y" />
@@ -140,7 +148,7 @@
         </Border>
 
         <!-- Right MPR Display Area -->
-        <Border Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="5" CornerRadius="8">
+        <Border Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="5" CornerRadius="4">
             <Grid x:Name="MprGrid">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />

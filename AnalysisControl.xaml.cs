@@ -41,6 +41,9 @@ namespace FilmAnalysis
 
         public event EventHandler AnalysisRequested;
         public event EventHandler PlanRequested;
+        
+        public event Action<double>? ProgressUpdate;
+        public event Action<bool>? ProgressActive;
 
         public AnalysisControl()
         {
@@ -222,26 +225,46 @@ namespace FilmAnalysis
         {
             if (_filmDose == null || _planDose == null) return;
 
-            RunAnalysisButton.IsEnabled = false;
-            StatusIndicatorActive(true);
+            var mainWindow = (MainWindow)System.Windows.Application.Current.MainWindow;
+            var settings = mainWindow._settings;
 
-            double dd = GammaDdInput.Value ?? 3.0;
-            double dta = GammaDtaInput.Value ?? 3.0;
+            double dd = GammaDdInput.Value ?? 2.0;
+            double dta = GammaDtaInput.Value ?? 2.0;
             double threshold = GammaThresholdInput.Value ?? 10.0;
             bool isGlobal = GammaModeCombo.SelectedIndex == 0;
             double shiftX = XShiftInput.Value ?? 0.0;
             double shiftY = YShiftInput.Value ?? 0.0;
             double fractions = FractionsInput.Value ?? 1.0;
 
+            // Engine settings from central AppSettings
+            double uncertainty = settings.GammaUncertainty;
+            double step = settings.GammaSearchStep;
+            double smoothingSigma = settings.GammaSmoothingSigma;
+            bool useBicubic = settings.GammaUseBicubic;
+
+            double[,] filmDoseToUse = _filmDose;
+            if (smoothingSigma > 0.001)
+            {
+                filmDoseToUse = ApplyGaussianSmoothing(_filmDose, smoothingSigma, _filmDpiX);
+            }
+
+            ProgressActive?.Invoke(true);
+            StatusIndicatorActive(true);
+
+            var progress = new Progress<double>(v => {
+                ProgressUpdate?.Invoke(v);
+            });
+
             // No array cropping needed, Gamma loop handles the physical ROI bounds directly
-            await Task.Run(() => PerformGammaAnalysis(_filmDose, _planDose, dd, dta, threshold, isGlobal, shiftX, shiftY, fractions));
+            await Task.Run(() => PerformGammaAnalysis(filmDoseToUse, _planDose, dd, dta, uncertainty, threshold, isGlobal, shiftX, shiftY, fractions, step, useBicubic, progress));
 
             DisplayGammaResults();
+            ProgressActive?.Invoke(false);
             StatusIndicatorActive(false);
             RunAnalysisButton.IsEnabled = true;
         }
 
-        private void PerformGammaAnalysis(double[,] filmDose, double[,] planDose, double dd_percent, double dta_mm, double threshold_percent, bool isGlobal, double shiftX, double shiftY, double fractions)
+        private void PerformGammaAnalysis(double[,] filmDose, double[,] planDose, double dd_percent, double dta_mm, double uncertainty_percent, double threshold_percent, bool isGlobal, double shiftX, double shiftY, double fractions, double step, bool useBicubic, IProgress<double>? progress)
         {
             int fh = filmDose.GetLength(0);
             int fw = filmDose.GetLength(1);
@@ -264,9 +287,10 @@ namespace FilmAnalysis
             double threshVal = maxPlan * (threshold_percent / 100.0);
 
             // Search window in Plan units
-            int winX = (int)Math.Ceiling(dta_mm / planSpacingX);
-            int winY = (int)Math.Ceiling(dta_mm / planSpacingY);
+            int winX = (int)Math.Ceiling(dta_mm / planSpacingX) + 1;
+            int winY = (int)Math.Ceiling(dta_mm / planSpacingY) + 1;
 
+            int completedRows = 0;
             Parallel.For(0, fh, fy =>
             {
                 for (int fx = 0; fx < fw; fx++)
@@ -298,7 +322,7 @@ namespace FilmAnalysis
 
                     double minGammaSq = double.MaxValue;
 
-                    double step = 1.0 / 3.0; // Sub-pixel tracking (evaluates 9 points per plan pixel area)
+                    // double step = 0.1; // Sub-pixel tracking — Now dynamic from settings
                     double startPy = Math.Max(0, npy - winY);
                     double endPy = Math.Min(ph - 1, npy + winY);
                     double startPx = Math.Max(0, npx - winX);
@@ -318,7 +342,7 @@ namespace FilmAnalysis
                             // Early Exit Math: If physical distance alone exceeds minGammaSq mathematically, skip dose lookup!
                             if (gammaDistSq >= minGammaSq) continue;
 
-                            double planVal = GetInterpolatedPlanDose(px, py);
+                            double planVal = useBicubic ? GetBicubicPlanDose(px, py) : GetBilinearPlanDose(px, py);
                             
                             // Scale Plan dose for comparison
                             double scaledPlanVal = planVal / fractions;
@@ -336,16 +360,20 @@ namespace FilmAnalysis
                                 dDiffPercent = (filmVal - scaledPlanVal) / localNorm * 100.0;
                             }
                             
-                            double gammaSq = Math.Pow(dDiffPercent / dd_percent, 2) + gammaDistSq;
+                            double effectiveDiff = Math.Max(0, Math.Abs(dDiffPercent) - uncertainty_percent);
+                            double gammaSq = Math.Pow(effectiveDiff / dd_percent, 2) + gammaDistSq;
                             if (gammaSq < minGammaSq) minGammaSq = gammaSq;
                         }
                     }
                     _gammaMap[fy, fx] = Math.Sqrt(minGammaSq);
                 }
+                System.Threading.Interlocked.Increment(ref completedRows);
+                if (fy % 10 == 0) progress?.Report((double)completedRows / fh * 100);
             });
+            progress?.Report(100);
         }
 
-        private double GetInterpolatedPlanDose(double px, double py)
+        private double GetBilinearPlanDose(double px, double py)
         {
             int ph = _planDose.GetLength(0);
             int pw = _planDose.GetLength(1);
@@ -355,10 +383,10 @@ namespace FilmAnalysis
             int y0 = (int)Math.Floor(py);
             int y1 = y0 + 1;
 
-            x0 = Math.Max(0, Math.Min(pw - 1, x0));
-            x1 = Math.Max(0, Math.Min(pw - 1, x1));
-            y0 = Math.Max(0, Math.Min(ph - 1, y0));
-            y1 = Math.Max(0, Math.Min(ph - 1, y1));
+            x0 = Math.Clamp(x0, 0, pw - 1);
+            x1 = Math.Clamp(x1, 0, pw - 1);
+            y0 = Math.Clamp(y0, 0, ph - 1);
+            y1 = Math.Clamp(y1, 0, ph - 1);
 
             double dx = px - x0;
             double dy = py - y0;
@@ -372,6 +400,89 @@ namespace FilmAnalysis
                    c10 * dx * (1 - dy) +
                    c01 * (1 - dx) * dy +
                    c11 * dx * dy;
+        }
+
+        private double GetBicubicPlanDose(double px, double py)
+        {
+            int ph = _planDose.GetLength(0);
+            int pw = _planDose.GetLength(1);
+            return BicubicSample(_planDose, py, px, ph, pw);
+        }
+
+        private double[,] ApplyGaussianSmoothing(double[,] data, double sigmaMm, double dpi)
+        {
+            int h = data.GetLength(0);
+            int w = data.GetLength(1);
+            double pixelSigma = sigmaMm * (dpi / 25.4);
+            if (pixelSigma < 0.1) return data;
+
+            int radius = (int)Math.Ceiling(pixelSigma * 3);
+            double[] kernel = new double[radius * 2 + 1];
+            double sum = 0;
+            for (int i = -radius; i <= radius; i++)
+            {
+                kernel[i + radius] = Math.Exp(-(i * i) / (2 * pixelSigma * pixelSigma));
+                sum += kernel[i + radius];
+            }
+            for (int i = 0; i < kernel.Length; i++) kernel[i] /= sum;
+
+            double[,] temp = new double[h, w];
+            double[,] result = new double[h, w];
+
+            // Horizontal pass
+            Parallel.For(0, h, y => {
+                for (int x = 0; x < w; x++) {
+                    double val = 0;
+                    for (int k = -radius; k <= radius; k++) {
+                        int cx = Math.Clamp(x + k, 0, w - 1);
+                        val += data[y, cx] * kernel[k + radius];
+                    }
+                    temp[y, x] = val;
+                }
+            });
+
+            // Vertical pass
+            Parallel.For(0, w, x => {
+                for (int y = 0; y < h; y++) {
+                    double val = 0;
+                    for (int k = -radius; k <= radius; k++) {
+                        int cy = Math.Clamp(y + k, 0, h - 1);
+                        val += temp[cy, x] * kernel[k + radius];
+                    }
+                    result[y, x] = val;
+                }
+            });
+
+            return result;
+        }
+
+        private static double BicubicSample(double[,] data, double row, double col, int h, int w)
+        {
+            int r0 = (int)Math.Floor(row);
+            int c0 = (int)Math.Floor(col);
+            double fr = row - r0, fc = col - c0;
+
+            double sum = 0;
+            for (int m = -1; m <= 2; m++)
+            {
+                double wr = CubicWeight(fr - m);
+                for (int n = -1; n <= 2; n++)
+                {
+                    double wc = CubicWeight(fc - n);
+                    int ri = Math.Clamp(r0 + m, 0, h - 1);
+                    int ci = Math.Clamp(c0 + n, 0, w - 1);
+                    sum += data[ri, ci] * wr * wc;
+                }
+            }
+            return sum;
+        }
+
+        private static double CubicWeight(double x)
+        {
+            x = Math.Abs(x);
+            if (x <= 1) return 1.5 * x * x * x - 2.5 * x * x + 1;
+            if (x < 2) return -0.5 * x * x * x + 2.5 * x * x - 4 * x + 2;
+            return 0;
         }
 
         private void DisplayGammaResults()
@@ -402,19 +513,13 @@ namespace FilmAnalysis
                     totalPoints++;
                     if (g <= 1.0) passPoints++;
 
-                    // Color: Green if <= 1, Red if > 1
-                    if (g <= 1.0) 
-                    {
-                        // Gradient from Green to Black? Or just Green?
-                        byte green = (byte)(255 * (1.0 - g * 0.5));
-                        pixels[idx] = 0; pixels[idx+1] = green; pixels[idx+2] = 0; pixels[idx+3] = 255;
-                    }
-                    else
-                    {
-                        // Red for fail
-                        byte red = (byte)Math.Min(255, 150 + (g-1)*20);
-                        pixels[idx] = 0; pixels[idx+1] = 0; pixels[idx+2] = red; pixels[idx+3] = 255;
-                    }
+                    // Color: Jet Mapping (0.0 to 1.5)
+                    double v = Math.Clamp(g / 1.5, 0, 1);
+                    var (R, G, B) = GetJetColor(v);
+                    pixels[idx] = B; 
+                    pixels[idx + 1] = G; 
+                    pixels[idx + 2] = R; 
+                    pixels[idx + 3] = 255;
                 }
             }
 

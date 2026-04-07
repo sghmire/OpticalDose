@@ -18,10 +18,10 @@
         <Border Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,0,1,0" Padding="15">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <TextBlock Text="Dose Comparison" FontSize="20" FontWeight="Bold" Margin="0,0,0,20" />
+                    <TextBlock Text="Dose Comparison" FontSize="18" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,20" />
 
                     <!-- Sources -->
-                    <TextBlock Text="Data Sources" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="Data Sources" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                     <Grid Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -41,7 +41,7 @@
                     </ui:Card>
 
                     <!-- ROI Selection -->
-                    <TextBlock Text="Region of Interest" FontWeight="SemiBold" Margin="0,0,0,5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="Region of Interest" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,5" />
                     <Grid Margin="0,0,0,5">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -55,7 +55,7 @@
                     <TextBlock x:Name="RoiStatusText" Text="No ROI selected" FontSize="9" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,15" />
 
                     <!-- Alignment -->
-                    <TextBlock Text="Spatial Alignment (mm)" FontWeight="SemiBold" Margin="0,0,0,10" />
+                    <TextBlock Text="Spatial Alignment (mm)" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                     <Grid Margin="0,0,0,15">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -72,7 +72,7 @@
                     </Grid>
 
                     <!-- Gamma Parameters -->
-                    <TextBlock Text="Gamma Criteria" FontWeight="SemiBold" Margin="0,0,0,10" />
+                    <TextBlock Text="Gamma Criteria" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                     <ui:Card Padding="10" Margin="0,0,0,20">
                         <Grid Margin="0,5,0,0">
                             <Grid.ColumnDefinitions>
@@ -87,14 +87,14 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Threshold (%)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
-                            <ui:NumberBox x:Name="GammaThresholdInput" Grid.Row="0" Grid.Column="1" Value="10" Minimum="0" Maximum="100" Margin="0,0,0,10" ValueChanged="GammaParams_Changed" />
-                            
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="DTA (mm)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
-                            <ui:NumberBox x:Name="GammaDtaInput" Grid.Row="1" Grid.Column="1" Value="3" Minimum="0.1" Margin="0,0,0,10" ValueChanged="GammaParams_Changed"/>
-                            
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="DD (%)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
-                            <ui:NumberBox x:Name="GammaDdInput" Grid.Row="2" Grid.Column="1" Value="3" Minimum="0.1" Margin="0,0,0,10" ValueChanged="GammaParams_Changed"/>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="DTA (mm)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
+                            <ui:NumberBox x:Name="GammaDtaInput" Grid.Row="0" Grid.Column="1" Value="2" Minimum="0.1" Margin="0,0,0,10" ValueChanged="GammaParams_Changed"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="DD (%)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
+                            <ui:NumberBox x:Name="GammaDdInput" Grid.Row="1" Grid.Column="1" Value="2" Minimum="0.1" Margin="0,0,0,10" ValueChanged="GammaParams_Changed"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Threshold (%)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
+                            <ui:NumberBox x:Name="GammaThresholdInput" Grid.Row="2" Grid.Column="1" Value="10" Minimum="0" Maximum="100" Margin="0,0,0,10" ValueChanged="GammaParams_Changed" />
 
                             <TextBlock Grid.Row="3" Grid.Column="0" Text="Plan Fx" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
                             <ui:NumberBox x:Name="FractionsInput" Grid.Row="3" Grid.Column="1" Value="1" Minimum="1" Margin="0,0,0,10" ValueChanged="Alignment_Changed"/>
@@ -115,11 +115,13 @@
                                Height="45" 
                                Click="RunAnalysisButton_Click" 
                                IsEnabled="False"/>
+                    
+
 
                     <Border x:Name="ResultsPanel" Margin="0,20,0,0" Visibility="Collapsed">
                          <StackPanel>
-                             <TextBlock Text="Results" FontWeight="Bold" FontSize="16" Margin="0,0,0,10" />
-                             <Border Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="15">
+                             <TextBlock Text="Results" Style="{StaticResource DosimetrySectionHeader}" FontSize="16" Margin="0,0,0,10" />
+                             <Border Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="2" Padding="15">
                                  <StackPanel>
                                      <TextBlock Text="Gamma Pass Rate" FontSize="12" HorizontalAlignment="Center"/>
                                      <TextBlock x:Name="PassRateText" Text="98.5 %" FontSize="28" FontWeight="Bold" Foreground="Lime" HorizontalAlignment="Center" Margin="0,5"/>
@@ -144,7 +146,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Top Left: Measured Dose -->
-            <Border Grid.Row="0" Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="5" Padding="5">
+            <Border Grid.Row="0" Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="5">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -167,7 +169,7 @@
             </Border>
 
             <!-- Top Right: Planned Dose -->
-            <Border Grid.Row="0" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="5" Padding="5">
+            <Border Grid.Row="0" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="5">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -186,7 +188,7 @@
             </Border>
 
             <!-- Bottom Left: Profiles -->
-            <Border Grid.Row="1" Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="5" Padding="5">
+            <Border Grid.Row="1" Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="5">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -204,7 +206,7 @@
             </Border>
 
             <!-- Bottom Right: Gamma Map -->
-            <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="5" Padding="5" Background="#111111">
+            <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="5" Background="#111111">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />

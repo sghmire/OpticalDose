@@ -6,14 +6,63 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:local="clr-namespace:FilmAnalysis"
         mc:Ignorable="d"
-        Title="Film Analysis" Height="900" Width="1400"
+        Title="Film Tools" Height="900" Width="1400"
+        Icon="/Icon.png"
         WindowStartupLocation="CenterScreen"
         WindowState="Maximized"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica" 
         xmlns:ScottPlot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF">
 
+    <ui:FluentWindow.Resources>
+        <!-- Professional Navigation Button Style (Bottom Bar) -->
+        <Style x:Key="DosimetryNavButton" TargetType="ui:Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="Padding" Value="15,4" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ui:Button">
+                        <Border x:Name="BtnBorder" 
+                                Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="4,4,0,0">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="10,0">
+                                <ContentPresenter x:Name="IconSite" Content="{TemplateBinding Icon}" Margin="0,0,8,0" SnapsToDevicePixels="True" />
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="#11000000" />
+                            </Trigger>
+                            <Trigger Property="Tag" Value="Active">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="{StaticResource DosimetrySelectedBackground}" />
+                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{StaticResource DosimetrySelectedBorder}" />
+                                <Setter Property="Foreground" Value="{StaticResource DosimetrySelectedText}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DosimetrySectionHeader" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource DosimetryHeaderBrush}" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+    </ui:FluentWindow.Resources>
+
     <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="41*"/>
+            <ColumnDefinition Width="59*"/>
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="38" />
             <!-- Stable Header (Fixes clipping) -->
@@ -24,10 +73,10 @@
         </Grid.RowDefinitions>
 
         <!-- Root host for dialogs -->
-        <ContentPresenter x:Name="RootContentDialogPresenter" Grid.RowSpan="3" Panel.ZIndex="1001" />
+        <ContentPresenter x:Name="RootContentDialogPresenter" Grid.RowSpan="3" Panel.ZIndex="1001" Grid.ColumnSpan="2" />
 
         <!-- Compact Top Header Area (Title + Menu + Window Controls) -->
-        <Grid Grid.Row="0" Background="Transparent">
+        <Grid Grid.Row="0" Background="Transparent" Grid.ColumnSpan="2">
             <!-- 1. Background TitleBar: Handles window dragging and menus -->
             <ui:TitleBar Title="" Height="38" Background="Transparent" Padding="0,4,0,4">
                 <ui:TitleBar.Header>
@@ -42,7 +91,6 @@
                             </Style>
                         </Menu.ItemContainerStyle>
                         <MenuItem Header="_File" Padding="5,0,5,0" Height="45">
-                            <MenuItem Header="_Open..." Click="Open_Click" />
                             <MenuItem Header="Load raw film (tif/tif)" Click="LoadRawFilm_Click" />
                             <Separator />
                             <MenuItem Header="_Import">
@@ -60,12 +108,12 @@
                             <MenuItem x:Name="UndoMenuItem" Header="_Undo" Click="Undo_Click" InputGestureText="Ctrl+Z" IsEnabled="False" />
                             <MenuItem x:Name="RedoMenuItem" Header="_Redo" Click="Redo_Click" InputGestureText="Ctrl+Y" IsEnabled="False" />
                         </MenuItem>
-                        <MenuItem Header="_View" Height="45">
-                            <MenuItem Header="Calibration" Click="MenuSelectCalibration_Click" />
-                            <MenuItem Header="Dicom View" Click="MenuSelectDicom_Click" />
-                        </MenuItem>
+
                         <MenuItem Header="_Tools" Height="45">
                             <MenuItem Header="Jaw Size (FWHM)" Click="JawSizeMenu_Click" />
+                        </MenuItem>
+                        <MenuItem Header="_Help" Height="45">
+                            <MenuItem Header="_About" Click="About_Click" />
                         </MenuItem>
                     </Menu>
                 </ui:TitleBar.Header>
@@ -74,7 +122,7 @@
             <!-- 2. Foreground Title Overlay: Dynamic Contrast -->
             <Grid IsHitTestVisible="False">
                 <ui:TextBlock 
-                    Text="Film Dosimetry Analysis" 
+                    Text="Film Tools" 
                     FontTypography="Caption" 
                     FontWeight="Bold" 
                     VerticalAlignment="Center"
@@ -84,7 +132,7 @@
         </Grid>
 
         <!-- Main content (Now headerless) -->
-        <TabControl x:Name="MainTabControl" Grid.Row="1" Background="Transparent" BorderThickness="0" Margin="10">
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Background="Transparent" BorderThickness="0" Margin="10,10,10,10" Grid.ColumnSpan="2">
             <TabControl.ItemContainerStyle>
                 <Style TargetType="TabItem">
                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -111,12 +159,12 @@
                             <TabItem Header="Transform">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel Margin="10">
-                                        <TextBlock Text="Alignment Tools" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Alignment Tools" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <ui:Button x:Name="AutoAlignCenterButton" Content="Auto Center" Icon="{ui:SymbolIcon TargetArrow24}" Width="310" Margin="0,0,0,8" Click="AutoCenter_Click" />
                                         <ui:Button x:Name="ManuallyAlignButton" Content="Manually Align (3-Point)" Icon="{ui:SymbolIcon Cursor24}" Width="310" Margin="0,0,0,8" Click="ManuallyAlign_Click" />
                                         <ui:Button x:Name="AutoAlignImageButton" Content="Auto Align Image" Icon="{ui:SymbolIcon DrawImage24}" Width="310" Margin="0,0,0,15" Click="AutoAlign_Click" />
 
-                                        <TextBlock Text="Orientation" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Orientation" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <Grid Margin="0,0,0,15">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -130,7 +178,7 @@
                                             <ui:Button x:Name="FlipVButton" Icon="{ui:SymbolIcon FlipVertical24}" Grid.Column="3" ToolTip="Flip Vertical" Width="70" Click="Flip_Click" />
                                         </Grid>
 
-                                        <TextBlock Text="Cropping" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Cropping" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <ui:Button x:Name="ManualCropButton" Content="Manual Crop (Draw ROI)" Icon="{ui:SymbolIcon Crop24}" Width="310" Margin="0,0,0,8" Click="Crop_Click" />
                                         <Grid Margin="0,0,0,4" Width="310">
                                             <Grid.ColumnDefinitions>
@@ -153,7 +201,7 @@
                             <TabItem Header="Filters">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel Margin="10">
-                                        <TextBlock Text="Image Enhancement" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Image Enhancement" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <Grid Margin="0,0,0,8" Width="310">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
@@ -176,7 +224,7 @@
                                         </Grid>
                                         <ui:Button x:Name="ROIFilterButton" Content="ROI Filter (Zero Outside)" Icon="{ui:SymbolIcon FilterSync24}" Width="310" Margin="0,0,0,15" Click="Filter_Click" />
 
-                                        <TextBlock Text="Smoothing" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Smoothing" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <ComboBox x:Name="SmoothDropDown" Width="310" Margin="0,0,0,8">
                                             <ComboBoxItem Content="Average" IsSelected="True" />
                                             <ComboBoxItem Content="Median" />
@@ -193,7 +241,7 @@
                                             <ui:Button x:Name="SmoothButton" Content="Apply Smooth" Icon="{ui:SymbolIcon Cube24}" Grid.Column="2" HorizontalAlignment="Stretch" Click="Filter_Click" />
                                         </Grid>
 
-                                        <TextBlock Text="Interpolation" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Interpolation" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <ComboBox x:Name="InterpolationDropDown" Width="310" Margin="0,0,0,8">
                                             <ComboBoxItem Content="Nearest" />
                                             <ComboBoxItem Content="Linear" IsSelected="True" />
@@ -217,7 +265,7 @@
                             <TabItem Header="Dose &amp; Tools">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel Margin="10">
-                                        <TextBlock Text="Dose Conversion" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Dose Conversion" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <ui:Button x:Name="ExtractROIButton" Content="Extract ROI" Icon="{ui:SymbolIcon DrawShape24}" Width="310" Margin="0,0,0,8" Click="ExtractROI_Click" ToolTip="Select region and extract RGB intensities" />
                                         <ui:Button x:Name="ConvertToDoseButton" Content="Convert to Dose" Icon="{ui:SymbolIcon Calculator24}" Background="{DynamicResource AccentFillColorDefaultBrush}" Foreground="White" Width="310" Margin="0,0,0,8" Click="ConvertToDose_Click" />
                                         <ui:ToggleSwitch x:Name="ShowDoseToggle" Content="Show Dose Map" Margin="0,0,0,8" Click="ShowDoseToggle_Click" IsEnabled="False" />
@@ -228,11 +276,11 @@
                                             </StackPanel>
                                         </Border>
 
-                                        <TextBlock Text="Visual Tools" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Visual Tools" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <TextBlock Text="Contrast Adjustment" Margin="0,0,0,5" />
                                         <Slider x:Name="ContrastSlider" Width="310" Margin="0,0,0,15" Minimum="0" Maximum="255" Value="128" ValueChanged="ContrastSlider_ValueChanged" />
 
-                                        <TextBlock Text="Measurement Tools" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <TextBlock Text="Measurement Tools" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <UniformGrid Columns="2" Width="310" Margin="0,0,0,15">
                                             <ui:Button x:Name="ROIDoseButton" Content="ROI Dose" Icon="{ui:SymbolIcon DrawShape24}" HorizontalAlignment="Stretch" Margin="2" Click="Measurement_Click" />
                                             <ui:Button x:Name="ProfileButton" Content="Profiles" Icon="{ui:SymbolIcon Line24}" HorizontalAlignment="Stretch" Margin="2" Click="ProfileButton_Click" />
@@ -240,7 +288,7 @@
                                             <ui:Button x:Name="AreaButton" Content="Area" Icon="{ui:SymbolIcon DocumentTable24}" HorizontalAlignment="Stretch" Margin="2" Click="Measurement_Click" />
                                         </UniformGrid>
 
-                                        <TextBlock Text="Color Map" FontWeight="Bold" Margin="0,0,0,5" />
+                                        <TextBlock Text="Color Map" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,5" />
                                         <TextBlock Text="Active Color Map" Margin="0,0,0,5" />
                                         <ComboBox x:Name="ColorMapDropDown" Width="310" Margin="0,0,0,8" SelectionChanged="ColorMapDropDown_SelectionChanged" />
                                     </StackPanel>
@@ -249,7 +297,7 @@
                         </TabControl>
 
                         <!-- Image Metadata Panel -->
-                        <Border Grid.Row="1" Margin="0,10,0,0" Padding="15" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8">
+                        <Border Grid.Row="1" Margin="0,10,0,0" Padding="15" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4">
                             <StackPanel>
                                 <TextBlock Text="Image Information" FontWeight="Bold" Margin="0,0,0,10" Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
                                 <Grid>
@@ -281,7 +329,7 @@
                     </Grid>
 
                     <!-- Main Display (Centered) -->
-                    <Border x:Name="MainDisplay" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="10" CornerRadius="8" Margin="10,0,10,0">
+                    <Border x:Name="MainDisplay" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="10" CornerRadius="4" Margin="10,0,10,0">
                         <Grid x:Name="MasterImageContainer">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="30" />
@@ -293,7 +341,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="40" />
                             </Grid.ColumnDefinitions>
-                            
+
                             <!-- Ruler Bar Backgrounds (Framing the image) -->
                             <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Background="#F3F3F3" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,0,0,1" Panel.ZIndex="5" Opacity="0.7" />
                             <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Background="#F3F3F3" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Panel.ZIndex="5" Opacity="0.7" />
@@ -301,16 +349,16 @@
                             <Border Grid.Row="1" Grid.Column="2" Background="#F3F3F3" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1,0,0,0" Panel.ZIndex="5" Opacity="0.7" />
 
                             <TextBlock Text="mm" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Panel.ZIndex="11" />
-                            
+
                             <Canvas x:Name="TopRulerCanvas" Grid.Row="0" Grid.Column="1" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Panel.ZIndex="10" ClipToBounds="True" />
                             <Canvas x:Name="BottomRulerCanvas" Grid.Row="2" Grid.Column="1" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Panel.ZIndex="10" ClipToBounds="True" />
                             <Canvas x:Name="LeftRulerCanvas" Grid.Row="1" Grid.Column="0" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Panel.ZIndex="10" ClipToBounds="True" />
                             <Canvas x:Name="RightRulerCanvas" Grid.Row="1" Grid.Column="2" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Panel.ZIndex="10" ClipToBounds="True" />
 
                             <Grid x:Name="ImageGrid" Grid.Row="1" Grid.Column="1" Background="Transparent">
-                            <Image x:Name="MainDisplayImage" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" 
+                                <Image x:Name="MainDisplayImage" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" 
                                    MouseDown="Image_MouseDown" MouseMove="Image_MouseMove" MouseUp="Image_MouseUp" />
-                            <Canvas x:Name="SelectionCanvas" 
+                                <Canvas x:Name="SelectionCanvas" 
                                     IsHitTestVisible="True" 
                                     Background="Transparent"
                                     HorizontalAlignment="Stretch"
@@ -318,30 +366,30 @@
                                     MouseDown="Image_MouseDown" 
                                     MouseMove="Image_MouseMove" 
                                     MouseUp="Image_MouseUp">
-                                <Grid x:Name="ZeroAnchor" IsHitTestVisible="False" Opacity="0.15" Panel.ZIndex="1">
-                                    <Line X1="0" X2="20" Y1="0" Y2="0" Stroke="Black" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    <Line X1="0" X2="0" Y1="0" Y2="20" Stroke="Black" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Grid>
+                                    <Grid x:Name="ZeroAnchor" IsHitTestVisible="False" Opacity="0.15" Panel.ZIndex="1">
+                                        <Line X1="0" X2="20" Y1="0" Y2="0" Stroke="Black" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        <Line X1="0" X2="0" Y1="0" Y2="20" Stroke="Black" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Grid>
 
-                                <Rectangle x:Name="SelectionRect"
+                                    <Rectangle x:Name="SelectionRect"
                                            Stroke="Transparent"
                                            StrokeThickness="0"
                                            Fill="#44FF0000" 
                                            Visibility="Collapsed" />
-                                <!-- Crosshairs for Fixed ROI -->
-                                 <Line x:Name="SelectionCrosshairH" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
-                                <Line x:Name="SelectionCrosshairV" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
+                                    <!-- Crosshairs for Fixed ROI -->
+                                    <Line x:Name="SelectionCrosshairH" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
+                                    <Line x:Name="SelectionCrosshairV" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
 
-                                <!-- Manual Alignment Markers -->
-                                <Ellipse x:Name="AlignMarkerLeft" Width="10" Height="10" Fill="Red" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
-                                <Ellipse x:Name="AlignMarkerRight" Width="10" Height="10" Fill="DodgerBlue" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
-                                <Ellipse x:Name="AlignMarkerTop" Width="10" Height="10" Fill="LimeGreen" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
-                                <Ellipse x:Name="AlignMarkerIso" Width="14" Height="14" Fill="Yellow" Stroke="Black" StrokeThickness="1.5" Visibility="Collapsed" />
+                                    <!-- Manual Alignment Markers -->
+                                    <Ellipse x:Name="AlignMarkerLeft" Width="10" Height="10" Fill="Red" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                                    <Ellipse x:Name="AlignMarkerRight" Width="10" Height="10" Fill="DodgerBlue" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                                    <Ellipse x:Name="AlignMarkerTop" Width="10" Height="10" Fill="LimeGreen" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                                    <Ellipse x:Name="AlignMarkerIso" Width="14" Height="14" Fill="Yellow" Stroke="Black" StrokeThickness="1.5" Visibility="Collapsed" />
 
-                                <!-- Measurement Tools Visualization -->
-                                <Line x:Name="MeasurementLine" Stroke="Lime" StrokeThickness="2" Visibility="Collapsed" />
-                                <Polyline x:Name="MeasurementPolyline" Stroke="Yellow" StrokeThickness="2" Visibility="Collapsed" />
-                                <Border x:Name="MeasurementLabel" 
+                                    <!-- Measurement Tools Visualization -->
+                                    <Line x:Name="MeasurementLine" Stroke="Lime" StrokeThickness="2" Visibility="Collapsed" />
+                                    <Polyline x:Name="MeasurementPolyline" Stroke="Yellow" StrokeThickness="2" Visibility="Collapsed" />
+                                    <Border x:Name="MeasurementLabel" 
                                         Background="#CC000000" 
                                         BorderBrush="White" 
                                         BorderThickness="1" 
@@ -349,29 +397,41 @@
                                         Padding="5,2" 
                                         Visibility="Collapsed" 
                                         Panel.ZIndex="100">
-                                    <TextBlock x:Name="MeasurementLabelText" Foreground="White" FontWeight="Bold" FontSize="11" Text="0.00" />
-                                </Border>
-                            </Canvas>
+                                        <TextBlock x:Name="MeasurementLabelText" Foreground="White" FontWeight="Bold" FontSize="11" Text="0.00" />
+                                    </Border>
+                                </Canvas>
 
-                            <!-- ROI Control Overlay -->
-                            <StackPanel x:Name="ROIModeOverlay" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="15" Visibility="Collapsed">
-                                <Border Background="#CC2D2D2D" CornerRadius="20" Padding="15,8" BorderBrush="#66FFFFFF" BorderThickness="1">
+                                <!-- ROI Control Overlay -->
+                                <!-- Unified Tool Mode Overlay (Top-Right) -->
+                                <Border x:Name="ToolModeOverlay" 
+                                        VerticalAlignment="Top" 
+                                        HorizontalAlignment="Right" 
+                                        Margin="10" 
+                                        Background="{StaticResource DosimetrySelectedBackground}" 
+                                        BorderBrush="{StaticResource DosimetrySelectedBorder}" 
+                                        BorderThickness="1" 
+                                        CornerRadius="4" 
+                                        Padding="10,5"
+                                        Visibility="Collapsed">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="ROI TOOL ACTIVE" VerticalAlignment="Center" Foreground="White" FontWeight="Bold" Margin="0,0,15,0" FontSize="11" />
-                                        <ui:Button Content="Exit ROI Mode" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Danger" Click="ExitROIMode_Click" Height="30" Padding="15,0" />
+                                        <TextBlock x:Name="ToolModeText" 
+                                                 Text="TOOL ACTIVE" 
+                                                 Style="{StaticResource DosimetrySectionHeader}" 
+                                                 VerticalAlignment="Center" 
+                                                 FontSize="11" 
+                                                 Margin="0,0,10,0" />
+                                        <ui:Button x:Name="ExitToolButton" 
+                                                 Icon="{ui:SymbolIcon Dismiss24}" 
+                                                 Appearance="Danger" 
+                                                 Width="24" 
+                                                 Height="24" 
+                                                 Padding="0" 
+                                                 Click="ExitActiveTool_Click" 
+                                                 ToolTip="Exit Active Tool" />
                                     </StackPanel>
                                 </Border>
-                            </StackPanel>
 
-                            <!-- Alignment Control Overlay -->
-                            <StackPanel x:Name="AlignModeOverlay" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="15" Visibility="Collapsed">
-                                <Border Background="#CC2D2D2D" CornerRadius="20" Padding="15,8" BorderBrush="#66FFFFFF" BorderThickness="1">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock x:Name="AlignStepText" Text="Click LEFT marker" VerticalAlignment="Center" Foreground="White" FontWeight="Bold" Margin="0,0,15,0" FontSize="11" />
-                                        <ui:Button Content="Cancel" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Danger" Click="ExitAlignMode_Click" Height="30" Padding="15,0" />
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
+
                             </Grid>
                         </Grid>
                     </Border>
@@ -379,10 +439,14 @@
                     <!-- Right Stack: DataGrid and Profiles -->
                     <Grid Grid.Column="2">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" /> <!-- Row 0: TabControl Area -->
-                            <RowDefinition Height="*" />    <!-- Row 1: DataGrid Area -->
-                            <RowDefinition Height="*" />    <!-- Row 2: Analysis Plot Area -->
-                            <RowDefinition Height="Auto" /> <!-- Row 3: Status/Feedback Area -->
+                            <RowDefinition Height="Auto" />
+                            <!-- Row 0: TabControl Area -->
+                            <RowDefinition Height="*" />
+                            <!-- Row 1: DataGrid Area -->
+                            <RowDefinition Height="*" />
+                            <!-- Row 2: Analysis Plot Area -->
+                            <RowDefinition Height="Auto" />
+                            <!-- Row 3: Status/Feedback Area -->
                         </Grid.RowDefinitions>
 
                         <!-- Processing Tabs Area -->
@@ -494,7 +558,7 @@
                                     </ContextMenu>
                                 </ui:DataGrid.ContextMenu>
                             </ui:DataGrid>
-                            
+
                             <ui:Button x:Name="DeleteRowButton" 
                                        Grid.Row="1" 
                                        Content="Delete Selected Rows" 
@@ -506,7 +570,7 @@
                                        Click="DeleteSelected_Click" />
                         </Grid>
 
-                        <Border Grid.Row="2" Grid.RowSpan="2" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="8" Margin="0,0,0,0">
+                        <Border Grid.Row="2" Grid.RowSpan="2" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="4" Margin="0,0,0,0">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
@@ -532,47 +596,46 @@
         </TabControl>
 
         <!-- Professional Micro-Nav Bar (Footer) -->
-        <Border Grid.Row="2" Background="Transparent" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Padding="15,2">
+        <Border Grid.Row="2" Background="Transparent" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Padding="15,2" Grid.ColumnSpan="2" Margin="0">
             <Grid>
                 <!-- Navigation (Left Aligned) -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                     <ui:Button x:Name="NavCalibrationButton" 
                                Content="Calibration" 
                                Icon="{ui:SymbolIcon AppGeneric24}" 
-                               Width="110" 
-                               Height="30" 
-                               FontSize="9"
-                               VerticalContentAlignment="Center"
-                               Margin="0,0,5,0"
-                               Appearance="Primary"
+                               Tag="Active"
+                               Style="{StaticResource DosimetryNavButton}"
                                Click="MenuSelectCalibration_Click" />
 
                     <ui:Button x:Name="NavDicomButton" 
                                Content="Dicom View" 
                                Icon="{ui:SymbolIcon Cube24}" 
-                               Width="110" 
-                               Height="30" 
-                               FontSize="9"
-                               VerticalContentAlignment="Center"
-                               Margin="0,0,5,0"
-                               Appearance="Secondary"
+                               Tag=""
+                               Style="{StaticResource DosimetryNavButton}"
+                               Margin="10,0,0,0"
                                Click="MenuSelectDicom_Click" />
 
                     <ui:Button x:Name="NavAnalysisButton" 
                                Content="Analysis" 
                                Icon="{ui:SymbolIcon ChartMultiple24}" 
-                               Width="110" 
-                               Height="30" 
-                               FontSize="9"
-                               VerticalContentAlignment="Center"
-                               Margin="0,0"
-                               Appearance="Secondary"
+                               Tag=""
+                               Style="{StaticResource DosimetryNavButton}"
+                               Margin="10,0,0,0"
                                Click="MenuSelectAnalysis_Click" />
                 </StackPanel>
 
                 <!-- Coordinates and Status (Right Aligned) -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <TextBlock x:Name="CoordText" Text="0.0, 0.0 mm" Margin="0,0,15,0" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
+                    
+                    <ProgressBar x:Name="GlobalProgressBar" 
+                                    Width="120" 
+                                    Height="12" 
+                                    Value="0" 
+                                    Maximum="100" 
+                                    Visibility="Collapsed" 
+                                    Margin="0,0,10,0" />
+
                     <Border x:Name="StatusIndicator" 
                             HorizontalAlignment="Right" 
                             VerticalAlignment="Center" 

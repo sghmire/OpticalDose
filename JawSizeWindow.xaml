@@ -4,6 +4,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:scott="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         Title="Jaw Size (FWHM)" Height="800" Width="1000"
+        Icon="/Icon.png"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource ApplicationBackgroundBrush}"
         Foreground="{DynamicResource TextFillColorPrimaryBrush}"
@@ -22,7 +23,7 @@
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <ui:SymbolIcon Symbol="DeveloperBoard24" Margin="0,0,10,0" FontSize="20"/>
-                    <TextBlock Text="JAW SIZE ANALYSIS" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Text="JAW SIZE ANALYSIS" Style="{StaticResource DosimetrySectionHeader}" FontSize="18" VerticalAlignment="Center"/>
                 </StackPanel>
                 <ui:Button Content="Close" HorizontalAlignment="Right" Click="Close_Click" Appearance="Secondary"/>
             </Grid>
@@ -39,7 +40,7 @@
                 
                 <!-- Input Controls -->
                 <StackPanel Grid.Column="0" Margin="0,0,15,0">
-                    <TextBlock Text="PARAMETERS" FontSize="11" FontWeight="Bold" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="PARAMETERS" Style="{StaticResource DosimetrySectionHeader}" FontSize="11" Margin="0,0,0,10" />
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -70,9 +71,9 @@
 
                 <!-- Results Display -->
                 <StackPanel Grid.Column="2" Margin="15,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="RESULTS" FontSize="11" FontWeight="Bold" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="RESULTS" Style="{StaticResource DosimetrySectionHeader}" FontSize="11" Margin="0,0,0,10" />
                     <TextBlock x:Name="ResultText" Text="FWHM X = --- mm&#x0a;FWHM Y = --- mm&#x0a;Coverage = --- mm²&#x0a;Method = ---" FontWeight="SemiBold" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                    <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
+                    <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" CornerRadius="2" Padding="8,4">
                         <TextBlock x:Name="StatusText" Text="Ready" FontSize="10" FontStyle="Italic" HorizontalAlignment="Center" />
                     </Border>
                 </StackPanel>
@@ -88,7 +89,7 @@
 
             <!-- X-Profile Plot -->
             <Grid Grid.Column="0" Margin="0,0,5,0">
-                <Border BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" CornerRadius="4">
+                <Border BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" CornerRadius="2">
                     <scott:WpfPlot x:Name="XPlot" MinHeight="180"/>
                 </Border>
                 <TextBlock Text="X-Axis Profile" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="10,5,0,0" 
@@ -97,7 +98,7 @@
 
             <!-- Y-Profile Plot -->
             <Grid Grid.Column="1" Margin="5,0,0,0">
-                <Border BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" CornerRadius="4">
+                <Border BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" CornerRadius="2">
                     <scott:WpfPlot x:Name="YPlot" MinHeight="180"/>
                 </Border>
                 <TextBlock Text="Y-Axis Profile" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="10,5,0,0" 
