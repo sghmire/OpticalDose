@@ -257,6 +257,12 @@
                                 <!-- Crosshairs for Fixed ROI -->
                                  <Line x:Name="SelectionCrosshairH" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
                                 <Line x:Name="SelectionCrosshairV" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
+
+                                <!-- Manual Alignment Markers -->
+                                <Ellipse x:Name="AlignMarkerLeft" Width="10" Height="10" Fill="Red" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                                <Ellipse x:Name="AlignMarkerRight" Width="10" Height="10" Fill="DodgerBlue" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                                <Ellipse x:Name="AlignMarkerTop" Width="10" Height="10" Fill="LimeGreen" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                                <Ellipse x:Name="AlignMarkerIso" Width="14" Height="14" Fill="Yellow" Stroke="Black" StrokeThickness="1.5" Visibility="Collapsed" />
                             </Canvas>
 
                             <!-- ROI Control Overlay -->
@@ -265,6 +271,16 @@
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="ROI TOOL ACTIVE" VerticalAlignment="Center" Foreground="White" FontWeight="Bold" Margin="0,0,15,0" FontSize="11" />
                                         <ui:Button Content="Exit ROI Mode" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Danger" Click="ExitROIMode_Click" Height="30" Padding="15,0" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- Alignment Control Overlay -->
+                            <StackPanel x:Name="AlignModeOverlay" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="15" Visibility="Collapsed">
+                                <Border Background="#CC2D2D2D" CornerRadius="20" Padding="15,8" BorderBrush="#66FFFFFF" BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock x:Name="AlignStepText" Text="Click LEFT marker" VerticalAlignment="Center" Foreground="White" FontWeight="Bold" Margin="0,0,15,0" FontSize="11" />
+                                        <ui:Button Content="Cancel" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Danger" Click="ExitAlignMode_Click" Height="30" Padding="15,0" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>

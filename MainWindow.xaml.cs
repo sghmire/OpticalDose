@@ -50,6 +50,11 @@ namespace FilmAnalysis
         private bool _isDrawing = false;
         private bool _isFixedMode = false;
         private Point _startPoint;
+
+        // Manual Alignment State
+        private bool _isAligning = false;
+        private int _alignStep = 0; // 1=Left, 2=Right, 3=Top
+        private Point _alignLeft, _alignRight, _alignTop;
         private AppSettings _settings = new AppSettings();
 
         // Raw High-Precision Image Data
@@ -510,6 +515,7 @@ namespace FilmAnalysis
             try
             {
                 var newConfig = new CalibrationConfig();
+                var rawDataPoints = new List<CalibrationPoint>();
                 string[] lines = System.IO.File.ReadAllLines(filePath);
                 string currentSection = "";
 
@@ -526,13 +532,26 @@ namespace FilmAnalysis
 
                     if (string.IsNullOrEmpty(currentSection))
                     {
-                        if (trimmed.StartsWith("Channel:")) newConfig.Channel = trimmed.Split(':')[1].Trim();
-                        else if (trimmed.StartsWith("Degree:")) newConfig.Degree = int.Parse(trimmed.Split(':')[1].Trim());
+                        if (trimmed.StartsWith("Channel:")) newConfig.Channel = trimmed.Substring("Channel:".Length).Trim();
+                        else if (trimmed.StartsWith("Degree:")) newConfig.Degree = int.Parse(trimmed.Substring("Degree:".Length).Trim());
                     }
                     else
                     {
                         switch (currentSection)
                         {
+                            case "RawData":
+                                var parts = trimmed.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                if (parts.Length >= 4 && double.TryParse(parts[0], out double dose))
+                                {
+                                    rawDataPoints.Add(new CalibrationPoint
+                                    {
+                                        Dose = dose,
+                                        Red = double.Parse(parts[1]),
+                                        Green = double.Parse(parts[2]),
+                                        Blue = double.Parse(parts[3])
+                                    });
+                                }
+                                break;
                             case "FirstFit":
                                 newConfig.FirstFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(double.Parse).ToArray();
                                 break;
@@ -545,6 +564,9 @@ namespace FilmAnalysis
                             case "DeltaOpt":
                                 newConfig.DeltaOpt = double.Parse(trimmed);
                                 break;
+                            case "RSquared":
+                                newConfig.RSquared = double.Parse(trimmed);
+                                break;
                         }
                     }
                 }
@@ -556,8 +578,64 @@ namespace FilmAnalysis
                                              $"Channel: {newConfig.Channel}\n" +
                                              $"Degree: {newConfig.Degree}\n" +
                                              $"R²: {newConfig.RSquared:F5}";
-                    
-                    // Update plot if possible (would need raw data saved in file too)
+
+                    // Populate calibration table from raw data
+                    CalibrationPoints.Clear();
+                    foreach (var pt in rawDataPoints)
+                        CalibrationPoints.Add(pt);
+
+                    // Sync channel dropdown
+                    for (int i = 0; i < ChannelFitDropDown.Items.Count; i++)
+                    {
+                        if ((ChannelFitDropDown.Items[i] as ComboBoxItem)?.Content.ToString() == newConfig.Channel)
+                        { ChannelFitDropDown.SelectedIndex = i; break; }
+                    }
+
+                    // Sync degree dropdown (degree 1 = index 0, etc.)
+                    if (newConfig.Degree >= 1 && newConfig.Degree <= 5)
+                        DegreeFitDropDown.SelectedIndex = newConfig.Degree - 1;
+
+                    // Update R² display
+                    RSquaredText.Text = newConfig.RSquared.ToString("F4");
+
+                    // Rebuild plot from loaded data if we have points
+                    if (CalibrationPoints.Count >= 2)
+                    {
+                        double[] doses = CalibrationPoints.Select(p => p.Dose).ToArray();
+                        double[] doseFit = new double[doses.Length];
+                        double[] rNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Red, 1) / 65535.0)).ToArray();
+                        double[] gNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Green, 1) / 65535.0)).ToArray();
+                        double[] bNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Blue, 1) / 65535.0)).ToArray();
+
+                        if (newConfig.Channel.Contains("Single"))
+                        {
+                            double[] xData = newConfig.Channel.Contains("Red") ? rNorm : (newConfig.Channel.Contains("Green") ? gNorm : bNorm);
+                            for (int i = 0; i < doses.Length; i++)
+                                doseFit[i] = FittingMath.PolyVal(newConfig.FirstFit, xData[i]);
+                        }
+                        else if (newConfig.Channel.Contains("Dual"))
+                        {
+                            double[] ratio = newConfig.Channel.Contains("Red")
+                                ? rNorm.Zip(bNorm, (r, b) => r / (b + 1e-9)).ToArray()
+                                : gNorm.Zip(bNorm, (g, b) => g / (b + 1e-9)).ToArray();
+                            double[] val1 = ratio.Select(r => FittingMath.PolyVal(newConfig.FirstFit, r)).ToArray();
+                            for (int i = 0; i < doses.Length; i++)
+                                doseFit[i] = FittingMath.PolyVal(newConfig.SecondFit, val1[i]);
+                        }
+                        else if (newConfig.Channel.Contains("Triple"))
+                        {
+                            double delta = newConfig.DeltaOpt;
+                            for (int i = 0; i < doses.Length; i++)
+                            {
+                                double rD = FittingMath.PolyVal(newConfig.FirstFit, rNorm[i] * delta);
+                                double gD = FittingMath.PolyVal(newConfig.SecondFit, gNorm[i] * delta);
+                                double bD = FittingMath.PolyVal(newConfig.ThirdFit, bNorm[i] * delta);
+                                doseFit[i] = (rD + gD + bD) / 3.0;
+                            }
+                        }
+                        UpdatePlot(doses, doseFit, newConfig.Channel);
+                    }
+
                     StatusText.Text = "Config Loaded";
                     StatusIndicator.Background = new SolidColorBrush(Colors.Green);
                 }
@@ -678,6 +756,8 @@ namespace FilmAnalysis
                         if (CurrentConfig.SecondFit != null) { writer.WriteLine("[SecondFit]"); writer.WriteLine(string.Join(" ", CurrentConfig.SecondFit)); }
                         if (CurrentConfig.ThirdFit != null) { writer.WriteLine("[ThirdFit]"); writer.WriteLine(string.Join(" ", CurrentConfig.ThirdFit)); }
                         if (CurrentConfig.DeltaOpt != 1.0) { writer.WriteLine("[DeltaOpt]"); writer.WriteLine(CurrentConfig.DeltaOpt); }
+                        writer.WriteLine("[RSquared]");
+                        writer.WriteLine(CurrentConfig.RSquared);
                     }
                     StatusText.Text = "Saved Config";
                     RefreshConfigs(); // Auto-refresh dropdown
@@ -686,7 +766,209 @@ namespace FilmAnalysis
         }
 
         private void AutoCenter_Click(object sender, RoutedEventArgs e) { }
-        private void ManuallyAlign_Click(object sender, RoutedEventArgs e) { }
+        private void ManuallyAlign_Click(object sender, RoutedEventArgs e)
+        {
+            if (MainDisplayImage.Source == null || _redChannel == null)
+            {
+                System.Windows.MessageBox.Show("Please load an image first.", "No Image");
+                return;
+            }
+            if (_isSelectingROI) return;
+
+            _isAligning = true;
+            _alignStep = 1;
+            AlignStepText.Text = "Click LEFT marker (Red)";
+            AlignModeOverlay.Visibility = Visibility.Visible;
+            StatusText.Text = "Alignment: Pick Left Marker";
+            StatusIndicator.Background = new SolidColorBrush(Colors.DodgerBlue);
+            SelectionRect.Visibility = Visibility.Collapsed;
+        }
+
+        private void ExitAlignMode_Click(object sender, RoutedEventArgs e)
+        {
+            _isAligning = false;
+            _alignStep = 0;
+            AlignModeOverlay.Visibility = Visibility.Collapsed;
+            AlignMarkerLeft.Visibility = Visibility.Collapsed;
+            AlignMarkerRight.Visibility = Visibility.Collapsed;
+            AlignMarkerTop.Visibility = Visibility.Collapsed;
+            AlignMarkerIso.Visibility = Visibility.Collapsed;
+            if (StatusText.Text.StartsWith("Alignment:"))
+            {
+                StatusText.Text = "Ready";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Gray);
+            }
+        }
+
+        private void HandleAlignmentClick(Point canvasPoint)
+        {
+            switch (_alignStep)
+            {
+                case 1:
+                    _alignLeft = canvasPoint;
+                    Canvas.SetLeft(AlignMarkerLeft, canvasPoint.X - 5);
+                    Canvas.SetTop(AlignMarkerLeft, canvasPoint.Y - 5);
+                    AlignMarkerLeft.Visibility = Visibility.Visible;
+                    _alignStep = 2;
+                    AlignStepText.Text = "Click RIGHT marker (Blue)";
+                    StatusText.Text = "Alignment: Pick Right Marker";
+                    break;
+                case 2:
+                    _alignRight = canvasPoint;
+                    Canvas.SetLeft(AlignMarkerRight, canvasPoint.X - 5);
+                    Canvas.SetTop(AlignMarkerRight, canvasPoint.Y - 5);
+                    AlignMarkerRight.Visibility = Visibility.Visible;
+                    _alignStep = 3;
+                    AlignStepText.Text = "Click TOP marker (Green)";
+                    StatusText.Text = "Alignment: Pick Top Marker";
+                    break;
+                case 3:
+                    _alignTop = canvasPoint;
+                    Canvas.SetLeft(AlignMarkerTop, canvasPoint.X - 5);
+                    Canvas.SetTop(AlignMarkerTop, canvasPoint.Y - 5);
+                    AlignMarkerTop.Visibility = Visibility.Visible;
+
+                    System.Windows.Rect renderedRect = GetRenderedImageBounds(MainDisplayImage);
+                    Point L = CanvasToPixel(_alignLeft, renderedRect);
+                    Point R = CanvasToPixel(_alignRight, renderedRect);
+                    Point T = CanvasToPixel(_alignTop, renderedRect);
+
+                    _ = PerformManualAlignment(L, R, T, renderedRect);
+                    break;
+            }
+        }
+
+        private Point CanvasToPixel(Point canvasPt, System.Windows.Rect renderedRect)
+        {
+            double xRatio = _imgWidth / renderedRect.Width;
+            double yRatio = _imgHeight / renderedRect.Height;
+            return new Point(
+                (canvasPt.X - renderedRect.X) * xRatio,
+                (canvasPt.Y - renderedRect.Y) * yRatio
+            );
+        }
+
+        private Point PixelToCanvas(Point pixelPt, System.Windows.Rect renderedRect)
+        {
+            double xRatio = renderedRect.Width / _imgWidth;
+            double yRatio = renderedRect.Height / _imgHeight;
+            return new Point(
+                pixelPt.X * xRatio + renderedRect.X,
+                pixelPt.Y * yRatio + renderedRect.Y
+            );
+        }
+
+        private async Task PerformManualAlignment(Point L, Point R, Point T, System.Windows.Rect renderedRect)
+        {
+            // Roll angle from Left-Right markers (MATLAB: atan2(R(2)-L(2), R(1)-L(1)))
+            double angle = Math.Atan2(R.Y - L.Y, R.X - L.X) * (180.0 / Math.PI);
+
+            // Isocenter: X from Top marker, Y from L-R line at that X
+            double isoX = T.X;
+            double isoY;
+            if (Math.Abs(R.X - L.X) > 1e-9)
+            {
+                double slope = (R.Y - L.Y) / (R.X - L.X);
+                isoY = L.Y + slope * (T.X - L.X);
+            }
+            else
+            {
+                isoY = (L.Y + R.Y) / 2.0;
+            }
+
+            // Show isocenter marker briefly
+            Point isoPanelPt = PixelToCanvas(new Point(isoX, isoY), renderedRect);
+            Canvas.SetLeft(AlignMarkerIso, isoPanelPt.X - 7);
+            Canvas.SetTop(AlignMarkerIso, isoPanelPt.Y - 7);
+            AlignMarkerIso.Visibility = Visibility.Visible;
+            AlignStepText.Text = $"Isocenter found. Transforming...";
+            StatusText.Text = $"Iso: ({isoX:F1}, {isoY:F1}) px, Roll: {angle:F2}°";
+            await Task.Delay(600);
+
+            int rows = _imgHeight;
+            int cols = _imgWidth;
+            double theta = -angle * Math.PI / 180.0;
+            double cosT = Math.Cos(theta), sinT = Math.Sin(theta);
+
+            // Transform corners to find new canvas bounds (MATLAB 1-based coordinates)
+            double[,] corners = { { 1, 1 }, { cols, 1 }, { 1, rows }, { cols, rows } };
+            double maxH = 0, maxV = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                double cx = corners[i, 0] - isoX;
+                double cy = corners[i, 1] - isoY;
+                double tx = cx * cosT + cy * sinT;
+                double ty = -cx * sinT + cy * cosT;
+                maxH = Math.Max(maxH, Math.Abs(tx));
+                maxV = Math.Max(maxV, Math.Abs(ty));
+            }
+
+            int newW = (int)Math.Ceiling(2 * maxH * 1.02);
+            int newH = (int)Math.Ceiling(2 * maxV * 1.02);
+            double newCenterX = (newW + 1) / 2.0;
+            double newCenterY = (newH + 1) / 2.0;
+
+            var newRed = new double[newH, newW];
+            var newGreen = new double[newH, newW];
+            var newBlue = new double[newH, newW];
+
+            // Inverse transform: for each output pixel, find source pixel
+            double cosNeg = Math.Cos(-theta), sinNeg = Math.Sin(-theta);
+
+            await Task.Run(() =>
+            {
+                Parallel.For(0, newH, outRow =>
+                {
+                    for (int outCol = 0; outCol < newW; outCol++)
+                    {
+                        // Undo T2 (1-based output coords)
+                        double dx = (outCol + 1) - newCenterX;
+                        double dy = (outRow + 1) - newCenterY;
+                        // Undo rotation
+                        double ux = dx * cosNeg + dy * sinNeg;
+                        double uy = -dx * sinNeg + dy * cosNeg;
+                        // Undo T1 (back to 1-based source coords)
+                        double srcX = ux + isoX;
+                        double srcY = uy + isoY;
+
+                        // Convert to 0-based array indices
+                        double srcCol = srcX - 1.0;
+                        double srcRow = srcY - 1.0;
+
+                        // Bilinear interpolation
+                        if (srcCol >= 0 && srcCol < cols - 1 && srcRow >= 0 && srcRow < rows - 1)
+                        {
+                            int c0 = (int)srcCol, r0 = (int)srcRow;
+                            int c1 = c0 + 1, r1 = r0 + 1;
+                            double fc = srcCol - c0, fr = srcRow - r0;
+                            double w00 = (1 - fc) * (1 - fr);
+                            double w10 = fc * (1 - fr);
+                            double w01 = (1 - fc) * fr;
+                            double w11 = fc * fr;
+
+                            newRed[outRow, outCol] = w00 * _redChannel[r0, c0] + w10 * _redChannel[r0, c1] + w01 * _redChannel[r1, c0] + w11 * _redChannel[r1, c1];
+                            newGreen[outRow, outCol] = w00 * _greenChannel[r0, c0] + w10 * _greenChannel[r0, c1] + w01 * _greenChannel[r1, c0] + w11 * _greenChannel[r1, c1];
+                            newBlue[outRow, outCol] = w00 * _blueChannel[r0, c0] + w10 * _blueChannel[r0, c1] + w01 * _blueChannel[r1, c0] + w11 * _blueChannel[r1, c1];
+                        }
+                    }
+                });
+            });
+
+            // Replace channels with transformed data
+            _redChannel = newRed;
+            _greenChannel = newGreen;
+            _blueChannel = newBlue;
+            _imgWidth = newW;
+            _imgHeight = newH;
+
+            // Clean up alignment UI
+            ExitAlignMode_Click(null, null);
+
+            // Refresh display
+            UpdateDisplayFromRaw();
+            StatusText.Text = $"Aligned: {angle:F2}° rotation, center at ({isoX:F0}, {isoY:F0})";
+            StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+        }
         private void AutoAlign_Click(object sender, RoutedEventArgs e) { }
         private void Rotation_Click(object sender, RoutedEventArgs e) { }
         private void Flip_Click(object sender, RoutedEventArgs e) { }
@@ -810,6 +1092,12 @@ namespace FilmAnalysis
 
                 private async void Image_MouseDown(object sender, MouseButtonEventArgs e)
         {
+            if (_isAligning)
+            {
+                HandleAlignmentClick(e.GetPosition(SelectionCanvas));
+                return;
+            }
+
             if (!_isSelectingROI) return;
 
             if (_isFixedMode)
@@ -1271,42 +1559,41 @@ namespace FilmAnalysis
 
         private double CalculateSinglePixelDose(int x, int y, string mode, CalibrationConfig config, double delta)
         {
-            const double eps = 2.22e-16;
             try
             {
                 double rValue = _redChannel != null ? _redChannel[y, x] : 0;
                 double gValue = _greenChannel != null ? _greenChannel[y, x] : 0;
                 double bValue = _blueChannel != null ? _blueChannel[y, x] : 0;
 
-                double rOD = -Math.Log10(rValue / 65535.0 + eps);
-                double gOD = -Math.Log10(gValue / 65535.0 + eps);
-                double bOD = -Math.Log10(bValue / 65535.0 + eps);
+                double rOD = -Math.Log10(Math.Max(rValue, 1) / 65535.0);
+                double gOD = -Math.Log10(Math.Max(gValue, 1) / 65535.0);
+                double bOD = -Math.Log10(Math.Max(bValue, 1) / 65535.0);
 
-                if (mode == "Red")
+                if (mode.Contains("Single") && mode.Contains("Red"))
                 {
                     return Math.Max(0, FittingMath.PolyVal(config.FirstFit, rOD));
                 }
-                else if (mode == "Green")
+                else if (mode.Contains("Single") && mode.Contains("Green"))
                 {
                     return Math.Max(0, FittingMath.PolyVal(config.FirstFit, gOD));
                 }
-                else if (mode == "Blue")
+                else if (mode.Contains("Single") && mode.Contains("Blue"))
                 {
                     return Math.Max(0, FittingMath.PolyVal(config.FirstFit, bOD));
                 }
-                else if (mode == "Red/Blue")
+                else if (mode.Contains("Dual") && mode.Contains("Red"))
                 {
-                    double ratio = rOD / bOD;
+                    double ratio = rOD / (bOD + 2.22e-16);
                     double firstPass = FittingMath.PolyVal(config.FirstFit, ratio);
                     return Math.Max(0, FittingMath.PolyVal(config.SecondFit, firstPass));
                 }
-                else if (mode == "Green/Blue")
+                else if (mode.Contains("Dual") && mode.Contains("Green"))
                 {
-                    double ratio = gOD / bOD;
+                    double ratio = gOD / (bOD + 2.22e-16);
                     double firstPass = FittingMath.PolyVal(config.FirstFit, ratio);
                     return Math.Max(0, FittingMath.PolyVal(config.SecondFit, firstPass));
                 }
-                else if (mode.Contains("|") || mode.StartsWith("Triple"))
+                else if (mode.Contains("Triple"))
                 {
                     double doseR = FittingMath.PolyVal(config.FirstFit, rOD);
                     double doseG = FittingMath.PolyVal(config.SecondFit, gOD);
