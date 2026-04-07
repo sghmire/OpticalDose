@@ -20,11 +20,12 @@ using System.Runtime.InteropServices;
 
 namespace FilmAnalysis
 {
-    public class ROISettings
+    public class AppSettings
     {
         public int FixedWidth { get; set; } = 100;
         public int FixedHeight { get; set; } = 100;
         public bool LastWasFixed { get; set; } = false;
+        public string CalibrationsPath { get; set; } = string.Empty;
     }
 
     public class CalibrationPoint
@@ -44,12 +45,12 @@ namespace FilmAnalysis
         public CalibrationConfig CurrentConfig { get; set; }
         private readonly IContentDialogService _dialogService = new ContentDialogService();
 
-        // ROI Selection State
+        // Application State
         private bool _isSelectingROI = false;
         private bool _isDrawing = false;
         private bool _isFixedMode = false;
         private Point _startPoint;
-        private ROISettings _roiSettings = new ROISettings();
+        private AppSettings _settings = new AppSettings();
 
         // Raw High-Precision Image Data
         private double[,] _redChannel;
@@ -57,13 +58,30 @@ namespace FilmAnalysis
         private double[,] _blueChannel;
         private int _imgWidth, _imgHeight;
         private double _tiffDpi = 72; // Default DPI
+        private string _calibrationsFolder;
+
+        // Dosimetry States
+        private double[,] _doseMap;
+        private ImageSource _rawImageSource;
+        private bool _isShowingDoseMap = false;
 
         public MainWindow()
         {
             InitializeComponent();
             _dialogService.SetContentPresenter(RootContentDialogPresenter);
+            
             LoadSettings();
+
+            // Setup Calibrations Folder
+            _calibrationsFolder = string.IsNullOrEmpty(_settings.CalibrationsPath) 
+                ? System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Calibrations")
+                : _settings.CalibrationsPath;
+
+            if (!System.IO.Directory.Exists(_calibrationsFolder)) 
+                try { System.IO.Directory.CreateDirectory(_calibrationsFolder); } catch { }
+
             InitializeCalibrationData();
+            RefreshConfigs();
             
             // Register for size changes to keep rulers in sync
             MasterImageContainer.SizeChanged += (s, e) => UpdateRulers();
@@ -73,11 +91,18 @@ namespace FilmAnalysis
         {
             try
             {
-                string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "roi_settings.json");
+                string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app_settings.json");
+                // Fallback for migration
+                if (!System.IO.File.Exists(path))
+                {
+                    string oldPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "roi_settings.json");
+                    if (System.IO.File.Exists(oldPath)) path = oldPath;
+                }
+
                 if (System.IO.File.Exists(path))
                 {
                     string json = System.IO.File.ReadAllText(path);
-                    _roiSettings = System.Text.Json.JsonSerializer.Deserialize<ROISettings>(json) ?? new ROISettings();
+                    _settings = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
                 }
             }
             catch { /* Ignore errors on load */ }
@@ -87,8 +112,8 @@ namespace FilmAnalysis
         {
             try
             {
-                string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "roi_settings.json");
-                string json = System.Text.Json.JsonSerializer.Serialize(_roiSettings);
+                string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app_settings.json");
+                string json = System.Text.Json.JsonSerializer.Serialize(_settings);
                 System.IO.File.WriteAllText(path, json);
             }
             catch { /* Ignore errors on save */ }
@@ -138,6 +163,70 @@ namespace FilmAnalysis
         private void Close_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private async void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            var stackPanel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+            
+            stackPanel.Children.Add(new System.Windows.Controls.TextBlock { 
+                Text = "Calibration Configuration Folder", 
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0,0,0,5) 
+            });
+
+            var grid = new System.Windows.Controls.Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var pathInput = new System.Windows.Controls.TextBox { 
+                Text = _calibrationsFolder, 
+                IsReadOnly = true,
+                Margin = new Thickness(0,0,5,0)
+            };
+            
+            var browseBtn = new Wpf.Ui.Controls.Button { 
+                Content = "Browse...", 
+                Padding = new Thickness(10,5,10,5)
+            };
+
+            browseBtn.Click += (s, ev) => {
+                var dlg = new Microsoft.Win32.OpenFolderDialog();
+                dlg.InitialDirectory = _calibrationsFolder;
+                if (dlg.ShowDialog() == true)
+                {
+                    pathInput.Text = dlg.FolderName;
+                }
+            };
+
+            System.Windows.Controls.Grid.SetColumn(pathInput, 0);
+            System.Windows.Controls.Grid.SetColumn(browseBtn, 1);
+            grid.Children.Add(pathInput);
+            grid.Children.Add(browseBtn);
+            stackPanel.Children.Add(grid);
+
+            var dialog = new ContentDialog(_dialogService.GetContentPresenter())
+            {
+                Title = "Application Settings",
+                Content = stackPanel,
+                PrimaryButtonText = "Save",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                _settings.CalibrationsPath = pathInput.Text;
+                _calibrationsFolder = _settings.CalibrationsPath;
+                if (!System.IO.Directory.Exists(_calibrationsFolder))
+                {
+                    try { System.IO.Directory.CreateDirectory(_calibrationsFolder); } catch { }
+                }
+                SaveSettings();
+                RefreshConfigs();
+                StatusText.Text = "Settings Updated";
+            }
         }
 
         private void DataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -388,101 +477,212 @@ namespace FilmAnalysis
 
         private void RefreshConfigButton_Click(object sender, RoutedEventArgs e)
         {
+            RefreshConfigs();
+        }
+
+        private void RefreshConfigs()
+        {
+            if (ConfigComboBox == null) return;
             ConfigComboBox.Items.Clear();
-            ConfigComboBox.Items.Add("--- Select ---");
+            ConfigComboBox.Items.Add("--- Select Calibration ---");
+
+            if (System.IO.Directory.Exists(_calibrationsFolder))
+            {
+                var files = System.IO.Directory.GetFiles(_calibrationsFolder, "*.cal");
+                foreach (var file in files)
+                {
+                    ConfigComboBox.Items.Add(System.IO.Path.GetFileName(file));
+                }
+            }
             ConfigComboBox.SelectedIndex = 0;
         }
 
-        private void FitButton_Click(object sender, RoutedEventArgs e)
+        private void ConfigComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ConfigComboBox.SelectedIndex <= 0) return;
+            string fileName = ConfigComboBox.SelectedItem.ToString();
+            string fullPath = System.IO.Path.Combine(_calibrationsFolder, fileName);
+            LoadCalibrationConfig(fullPath);
+        }
+
+        private void LoadCalibrationConfig(string filePath)
+        {
+            try
+            {
+                var newConfig = new CalibrationConfig();
+                string[] lines = System.IO.File.ReadAllLines(filePath);
+                string currentSection = "";
+
+                foreach (var line in lines)
+                {
+                    string trimmed = line.Trim();
+                    if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#")) continue;
+
+                    if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+                    {
+                        currentSection = trimmed.Substring(1, trimmed.Length - 2);
+                        continue;
+                    }
+
+                    if (string.IsNullOrEmpty(currentSection))
+                    {
+                        if (trimmed.StartsWith("Channel:")) newConfig.Channel = trimmed.Split(':')[1].Trim();
+                        else if (trimmed.StartsWith("Degree:")) newConfig.Degree = int.Parse(trimmed.Split(':')[1].Trim());
+                    }
+                    else
+                    {
+                        switch (currentSection)
+                        {
+                            case "FirstFit":
+                                newConfig.FirstFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(double.Parse).ToArray();
+                                break;
+                            case "SecondFit":
+                                newConfig.SecondFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(double.Parse).ToArray();
+                                break;
+                            case "ThirdFit":
+                                newConfig.ThirdFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(double.Parse).ToArray();
+                                break;
+                            case "DeltaOpt":
+                                newConfig.DeltaOpt = double.Parse(trimmed);
+                                break;
+                        }
+                    }
+                }
+
+                if (newConfig.IsValid)
+                {
+                    CurrentConfig = newConfig;
+                    CalibrationInfoText.Text = $"Loaded: {System.IO.Path.GetFileName(filePath)}\n" +
+                                             $"Channel: {newConfig.Channel}\n" +
+                                             $"Degree: {newConfig.Degree}\n" +
+                                             $"R²: {newConfig.RSquared:F5}";
+                    
+                    // Update plot if possible (would need raw data saved in file too)
+                    StatusText.Text = "Config Loaded";
+                    StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Failed to load calibration: {ex.Message}");
+            }
+        }
+
+        private async void FitButton_Click(object sender, RoutedEventArgs e)
         {
             if (CalibrationPoints == null || CalibrationPoints.Count < 2)
             {
-                System.Windows.MessageBox.Show("Please enter at least 2 data points for fitting.", "Insufficient Data");
+                var dialog = new Wpf.Ui.Controls.ContentDialog
+                {
+                    Title = "Insufficient Data",
+                    Content = "Please extract at least 2 calibration points before calculating a fit.",
+                    CloseButtonText = "Ok"
+                };
+                await _dialogService.ShowAsync(dialog, System.Threading.CancellationToken.None);
                 return;
             }
 
             try
             {
-                // 1. Extract and Normalize Data
                 double[] doses = CalibrationPoints.Select(p => p.Dose).ToArray();
                 double[] rNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Red, 1) / 65535.0)).ToArray();
                 double[] gNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Green, 1) / 65535.0)).ToArray();
                 double[] bNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Blue, 1) / 65535.0)).ToArray();
 
-                // 2. Get UI Parameters
-                int degree = int.Parse((DegreeFitDropDown.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "3");
-                string channelLogic = (ChannelFitDropDown.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "R";
+                string channelMode = (ChannelFitDropDown.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Single: Red";
+                int degree = DegreeFitDropDown.SelectedIndex + 1;
 
-                var config = new CalibrationConfig
-                {
-                    PolyDegree = degree,
-                    ChannelType = channelLogic.Contains("Triple") ? "Triple" : (channelLogic.Contains("Dual") ? "Dual" : "Single"),
-                    TargetChannel = channelLogic
-                };
+                CurrentConfig = new CalibrationConfig { Channel = channelMode, Degree = degree, CreatedAt = DateTime.Now };
+                double[]? doseFit = null;
 
-                double r2 = 0;
-
-                // 3. Mathematical Fitting
-                if (channelLogic.StartsWith("Single"))
-                {
-                    double[] chData = channelLogic.Contains("Red") ? rNorm : (channelLogic.Contains("Green") ? gNorm : bNorm);
-                    config.RedCoefficients = FittingMath.PolyFit(chData, doses, degree);
-                    r2 = FittingMath.CalculateRSquared(chData, doses, config.RedCoefficients);
-                }
-                else if (channelLogic.StartsWith("Triple"))
-                {
-                    config.RedCoefficients = FittingMath.PolyFit(rNorm, doses, degree);
-                    config.GreenCoefficients = FittingMath.PolyFit(gNorm, doses, degree);
-                    config.BlueCoefficients = FittingMath.PolyFit(bNorm, doses, degree);
-
-                    config.DeltaOpt = FittingMath.OptimizeTripleChannelDelta(rNorm, gNorm, bNorm, 
-                        config.RedCoefficients, config.GreenCoefficients, config.BlueCoefficients);
-
-                    // For Triple Channel, R2 is calculated on the averaged dose
-                    double[] avgDoseFit = new double[doses.Length];
-                    for (int i = 0; i < doses.Length; i++)
-                    {
-                        double rD = FittingMath.PolyVal(config.RedCoefficients, rNorm[i]);
-                        double gD = FittingMath.PolyVal(config.GreenCoefficients, gNorm[i]);
-                        double bD = FittingMath.PolyVal(config.BlueCoefficients, bNorm[i]);
-                        avgDoseFit[i] = (rD + gD + bD) / 3.0 * config.DeltaOpt;
+                if (channelMode.Contains("Single")) {
+                    double[] xData = channelMode.Contains("Red") ? rNorm : (channelMode.Contains("Green") ? gNorm : bNorm);
+                    CurrentConfig.FirstFit = FittingMath.PolyFit(xData, doses, degree);
+                    CurrentConfig.RSquared = FittingMath.CalculateRSquared(xData, doses, CurrentConfig.FirstFit);
+                    doseFit = xData.Select(x => FittingMath.PolyVal(CurrentConfig.FirstFit, x)).ToArray();
+                } else if (channelMode.Contains("Dual")) {
+                    double[] ratio = channelMode.Contains("Red") ? rNorm.Zip(bNorm, (r, b) => r / (b + 1e-9)).ToArray() : gNorm.Zip(bNorm, (g, b) => g / (b + 1e-9)).ToArray();
+                    double[] primary = channelMode.Contains("Red") ? rNorm : gNorm;
+                    CurrentConfig.FirstFit = FittingMath.PolyFit(ratio, primary, degree);
+                    double[] val1 = ratio.Select(r => FittingMath.PolyVal(CurrentConfig.FirstFit, r)).ToArray();
+                    CurrentConfig.SecondFit = FittingMath.PolyFit(val1, doses, degree);
+                    CurrentConfig.RSquared = FittingMath.CalculateRSquared(val1, doses, CurrentConfig.SecondFit);
+                    doseFit = val1.Select(v => FittingMath.PolyVal(CurrentConfig.SecondFit, v)).ToArray();
+                } else if (channelMode.Contains("Triple")) {
+                    CurrentConfig.FirstFit = FittingMath.PolyFit(rNorm, doses, degree);
+                    CurrentConfig.SecondFit = FittingMath.PolyFit(gNorm, doses, degree);
+                    CurrentConfig.ThirdFit = FittingMath.PolyFit(bNorm, doses, degree);
+                    CurrentConfig.DeltaOpt = FittingMath.OptimizeTripleChannelDelta(rNorm, gNorm, bNorm, CurrentConfig.FirstFit, CurrentConfig.SecondFit, CurrentConfig.ThirdFit);
+                    doseFit = new double[doses.Length];
+                    for (int i = 0; i < doses.Length; i++) {
+                        double rD = FittingMath.PolyVal(CurrentConfig.FirstFit, rNorm[i] * CurrentConfig.DeltaOpt);
+                        double gD = FittingMath.PolyVal(CurrentConfig.SecondFit, gNorm[i] * CurrentConfig.DeltaOpt);
+                        double bD = FittingMath.PolyVal(CurrentConfig.ThirdFit, bNorm[i] * CurrentConfig.DeltaOpt);
+                        doseFit[i] = (rD + gD + bD) / 3.0;
                     }
-                    
-                    // Simple R2 on the mean dose
-                    r2 = FittingMath.CalculateRSquared(new double[doses.Length], doses, new double[0]); // We'll just calculate it manually
                     double ssTot = doses.Sum(d => Math.Pow(d - doses.Average(), 2));
-                    double ssRes = 0;
-                    for(int i=0; i<doses.Length; i++) ssRes += Math.Pow(doses[i] - avgDoseFit[i], 2);
-                    r2 = 1 - (ssRes / ssTot);
+                    double ssRes = doses.Zip(doseFit, (actual, fit) => Math.Pow(actual - fit, 2)).Sum();
+                    CurrentConfig.RSquared = ssTot > 0 ? 1 - (ssRes / ssTot) : 0;
                 }
 
-                // 4. Update UI Results
-                CurrentConfig = config;
-                RSquaredText.Text = r2.ToString("F4");
-
-                // Color Coding
-                var parent = RSquaredText.Parent as StackPanel;
-                var border = parent?.Parent as Border;
-                if (border != null)
-                {
-                    if (r2 >= 0.9995) border.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22")); // ForestGreen
-                    else if (r2 >= 0.9990) border.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFDAA520")); // GoldenRod
-                    else border.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFB22222")); // Firebrick
+                if (CurrentConfig != null) {
+                    RSquaredText.Text = CurrentConfig.RSquared.ToString("F4");
+                    UpdatePlot(doses, doseFit, channelMode);
+                    StatusText.Text = "Calibration Successful";
+                    StatusIndicator.Background = new SolidColorBrush(System.Windows.Media.Colors.Green);
                 }
+            } catch (Exception ex) { System.Windows.MessageBox.Show("Fitting failed: " + ex.Message); }
+        }
 
-                StatusText.Text = "Fit Ready!";
-                StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
-                CalibrationInfoText.Text = $"Active Fit: {channelLogic}\nDegree: {degree}\nR²: {r2:F5}";
-            }
-            catch (Exception ex)
-            {
-                System.Windows.MessageBox.Show($"Error calculating fit: {ex.Message}", "Math Error");
-            }
+        private void UpdatePlot(double[] actualDose, double[]? fittedDose, string label)
+        {
+            if (MainPlot == null) return;
+            MainPlot.Plot.Clear();
+            var scatter = MainPlot.Plot.Add.Scatter(actualDose, fittedDose ?? actualDose);
+            scatter.LegendText = label;
+            scatter.Color = ScottPlot.Color.FromHex("#0078D4");
+            MainPlot.Plot.Title("Calibration Linearity (Actual vs. Fitted)");
+            MainPlot.Plot.XLabel("Actual Dose (Gy)");
+            MainPlot.Plot.YLabel("Calculated Dose (Gy)");
+            double maxDose = (actualDose != null && actualDose.Length > 0) ? actualDose.Max() * 1.1 : 1.0;
+            var line = MainPlot.Plot.Add.Line(0, 0, maxDose, maxDose);
+            line.Color = ScottPlot.Color.FromHex("#44000000");
+            line.LineStyle.Pattern = ScottPlot.LinePattern.Dashed;
+            MainPlot.Plot.Axes.AutoScale();
+            MainPlot.Refresh();
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            // TODO: Implement Save logic from Matlab
+            if (CurrentConfig == null || !CurrentConfig.IsValid) { System.Windows.MessageBox.Show("Please calculate a valid fit first."); return; }
+            var saveFileDialog = new Microsoft.Win32.SaveFileDialog 
+            { 
+                InitialDirectory = _calibrationsFolder,
+                Filter = "Calibration Files (*.cal)|*.cal", 
+                FileName = "Calibration_Active.cal" 
+            };
+
+            if (saveFileDialog.ShowDialog() == true) {
+                try {
+                    using (var writer = new System.IO.StreamWriter(saveFileDialog.FileName)) {
+                        writer.WriteLine("# FilmDosimetry Calibration Configuration");
+                        writer.WriteLine($"# Saved: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                        writer.WriteLine($"Channel:  {CurrentConfig.Channel}");
+                        writer.WriteLine($"Degree:   {CurrentConfig.Degree}");
+                        writer.WriteLine("");
+                        writer.WriteLine("[RawData]");
+                        foreach (var p in CalibrationPoints) writer.WriteLine($"{p.Dose}\t{p.Red}\t{p.Green}\t{p.Blue}");
+                        writer.WriteLine("");
+                        writer.WriteLine("[FirstFit]");
+                        writer.WriteLine(string.Join(" ", CurrentConfig.FirstFit!));
+                        if (CurrentConfig.SecondFit != null) { writer.WriteLine("[SecondFit]"); writer.WriteLine(string.Join(" ", CurrentConfig.SecondFit)); }
+                        if (CurrentConfig.ThirdFit != null) { writer.WriteLine("[ThirdFit]"); writer.WriteLine(string.Join(" ", CurrentConfig.ThirdFit)); }
+                        if (CurrentConfig.DeltaOpt != 1.0) { writer.WriteLine("[DeltaOpt]"); writer.WriteLine(CurrentConfig.DeltaOpt); }
+                    }
+                    StatusText.Text = "Saved Config";
+                    RefreshConfigs(); // Auto-refresh dropdown
+                } catch (Exception ex) { System.Windows.MessageBox.Show("Save failed: " + ex.Message); }
+            }
         }
 
         private void AutoCenter_Click(object sender, RoutedEventArgs e) { }
@@ -492,7 +692,6 @@ namespace FilmAnalysis
         private void Flip_Click(object sender, RoutedEventArgs e) { }
         private void Crop_Click(object sender, RoutedEventArgs e) { }
         private void Filter_Click(object sender, RoutedEventArgs e) { }
-        private void ConvertToDose_Click(object sender, RoutedEventArgs e) { }
         private async void ExtractROI_Click(object sender, RoutedEventArgs e)
         {
             if (MainDisplayImage.Source == null)
@@ -504,19 +703,19 @@ namespace FilmAnalysis
             // 1. Create the Dialog Content
             var stackPanel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
             
-            var freeRadio = new System.Windows.Controls.RadioButton { Content = "Free ROI (Click & Drag)", IsChecked = !_roiSettings.LastWasFixed, Margin = new Thickness(0,0,0,10) };
-            var fixedRadio = new System.Windows.Controls.RadioButton { Content = "Fixed ROI (Precise Pixel Area)", IsChecked = _roiSettings.LastWasFixed, Margin = new Thickness(0,0,0,10) };
+            var freeRadio = new System.Windows.Controls.RadioButton { Content = "Free ROI (Click & Drag)", IsChecked = !_settings.LastWasFixed, Margin = new Thickness(0,0,0,10) };
+            var fixedRadio = new System.Windows.Controls.RadioButton { Content = "Fixed ROI (Precise Pixel Area)", IsChecked = _settings.LastWasFixed, Margin = new Thickness(0,0,0,10) };
             
-            var fixedDataGrid = new System.Windows.Controls.Grid { Margin = new Thickness(20,0,0,10), IsEnabled = _roiSettings.LastWasFixed };
+            var fixedDataGrid = new System.Windows.Controls.Grid { Margin = new Thickness(20,0,0,10), IsEnabled = _settings.LastWasFixed };
             fixedDataGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
             fixedDataGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             fixedDataGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             fixedDataGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var wLabel = new System.Windows.Controls.TextBlock { Text = "Width:", VerticalAlignment = VerticalAlignment.Center };
-            var wInput = new System.Windows.Controls.TextBox { Text = _roiSettings.FixedWidth.ToString(), Margin = new Thickness(0,0,0,4) };
+            var wInput = new System.Windows.Controls.TextBox { Text = _settings.FixedWidth.ToString(), Margin = new Thickness(0,0,0,4) };
             var hLabel = new System.Windows.Controls.TextBlock { Text = "Height:", VerticalAlignment = VerticalAlignment.Center };
-            var hInput = new System.Windows.Controls.TextBox { Text = _roiSettings.FixedHeight.ToString() };
+            var hInput = new System.Windows.Controls.TextBox { Text = _settings.FixedHeight.ToString() };
 
             System.Windows.Controls.Grid.SetRow(wLabel, 0); System.Windows.Controls.Grid.SetColumn(wLabel, 0);
             System.Windows.Controls.Grid.SetRow(wInput, 0); System.Windows.Controls.Grid.SetColumn(wInput, 1);
@@ -547,14 +746,14 @@ namespace FilmAnalysis
             if (result == ContentDialogResult.Primary)
             {
                 _isFixedMode = fixedRadio.IsChecked == true;
-                _roiSettings.LastWasFixed = _isFixedMode;
+                _settings.LastWasFixed = _isFixedMode;
                 
                 if (_isFixedMode)
                 {
                     if (int.TryParse(wInput.Text, out int w) && int.TryParse(hInput.Text, out int h))
                     {
-                        _roiSettings.FixedWidth = w;
-                        _roiSettings.FixedHeight = h;
+                        _settings.FixedWidth = w;
+                        _settings.FixedHeight = h;
                     }
                 }
                 SaveSettings();
@@ -575,8 +774,8 @@ namespace FilmAnalysis
         {
             if (MainDisplayImage.Source is BitmapSource bs)
             {
-                SelectionRect.Width = (double)_roiSettings.FixedWidth / bs.PixelWidth * MainDisplayImage.ActualWidth;
-                SelectionRect.Height = (double)_roiSettings.FixedHeight / bs.PixelHeight * MainDisplayImage.ActualHeight;
+                SelectionRect.Width = (double)_settings.FixedWidth / bs.PixelWidth * MainDisplayImage.ActualWidth;
+                SelectionRect.Height = (double)_settings.FixedHeight / bs.PixelHeight * MainDisplayImage.ActualHeight;
             }
         }
 
@@ -687,7 +886,26 @@ namespace FilmAnalysis
             await PerformROIExtraction();
         }
 
-                private async System.Threading.Tasks.Task PerformROIExtraction()
+                private bool _isMeasurementMode = false;
+
+        private async void Measurement_Click(object sender, RoutedEventArgs e)
+        {
+            if (MainDisplayImage.Source == null) return;
+            
+            _isMeasurementMode = true;
+            _isSelectingROI = true;
+            ROIModeOverlay.Visibility = Visibility.Visible;
+            StatusText.Text = "Measurement Mode (Select ROI)";
+            StatusIndicator.Background = new SolidColorBrush(Colors.MediumPurple);
+            
+            if (_settings.LastWasFixed)
+            {
+                RefreshFixedROISize();
+                SelectionRect.Visibility = Visibility.Visible;
+            }
+        }
+
+        private async System.Threading.Tasks.Task PerformROIExtraction()
         {
             if (MainDisplayImage.Source is not BitmapSource bitmapSource) return;
 
@@ -770,54 +988,58 @@ namespace FilmAnalysis
                     double avgG = sumG / count;
                     double avgB = sumB / count;
 
-                    // 4. Prompt for Dose using ContentDialog
-                    var doseInput = new Wpf.Ui.Controls.TextBox 
-                    { 
-                        PlaceholderText = "Enter Dose (e.g. 200.0)", 
-                        Margin = new Thickness(0, 10, 0, 0)
-                    };
-
-                    var doseDialog = new ContentDialog
+                    if (_isMeasurementMode)
                     {
-                        Title = "Assign Dose",
-                        Content = doseInput,
-                        PrimaryButtonText = "Add Point",
-                        CloseButtonText = "Discard"
-                    };
+                        double sumDose = 0;
+                        double sumSqDose = 0;
+                        if (_doseMap != null)
+                        {
+                            for (int r = top; r < top + height; r++) {
+                                for (int c = left; c < left + width; c++) {
+                                    double d = _doseMap[r, c];
+                                    sumDose += d;
+                                    sumSqDose += d * d;
+                                }
+                            }
+                        }
 
-                    var res = await _dialogService.ShowAsync(doseDialog, System.Threading.CancellationToken.None);
+                        double meanDose = (count > 0) ? sumDose / count : 0;
+                        double stdDose = (count > 1) ? Math.Sqrt(Math.Max(0, (sumSqDose / count) - (meanDose * meanDose))) : 0;
 
-                    if (res == ContentDialogResult.Primary)
-                    {
-                        double dose = 0;
-                        double.TryParse(doseInput.Text, out dose);
+                        string doseMsg = (_doseMap != null) ? $"\n\nMean Dose: {meanDose:F3} ± {stdDose:F2} cGy" : "\n\n(No Dose Map)";
 
-                        var newPoint = new CalibrationPoint 
-                        { 
-                            Dose = dose, 
-                            Red = avgR, 
-                            Green = avgG, 
-                            Blue = avgB 
-                        };
-                        CalibrationPoints.Add(newPoint);
+                        System.Windows.MessageBox.Show(
+                            $"ROI Measurement ({count:N0} pixels)\n\n" +
+                            $"Avg Red:   {avgR:F1}\n" +
+                            $"Avg Green: {avgG:F1}\n" +
+                            $"Avg Blue:  {avgB:F1}" + doseMsg,
+                            "Measurement Results");
                         
-                        StatusText.Text = $"Extracted: {dose} Gy";
-                        StatusIndicator.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF228B22"));
+                        _isMeasurementMode = false;
+                        _isSelectingROI = false;
+                        ROIModeOverlay.Visibility = Visibility.Collapsed;
+                        StatusText.Text = "Ready";
+                        StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+                    }
+                    else
+                    {
+                        // 4. Prompt for Dose using ContentDialog
+                        var doseInput = new Wpf.Ui.Controls.TextBox { PlaceholderText = "Enter Dose (Gy)", Margin = new Thickness(0, 10, 0, 0) };
+                        var doseDialog = new ContentDialog { Title = "Add Calibration Point", Content = doseInput, PrimaryButtonText = "Add Point", CloseButtonText = "Discard" };
+                        var res = await _dialogService.ShowAsync(doseDialog, System.Threading.CancellationToken.None);
+
+                        if (res == ContentDialogResult.Primary)
+                        {
+                            double.TryParse(doseInput.Text, out double dose);
+                            CalibrationPoints.Add(new CalibrationPoint { Dose = dose, Red = avgR, Green = avgG, Blue = avgB });
+                            StatusText.Text = $"Extracted: {dose} Gy";
+                            StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+                        }
                     }
                 }
                 else
                 {
-                    // User clicked outside the film
-                    var errorDialog = new ContentDialog
-                    {
-                        Title = "Sampling Error",
-                        Content = "Selection is outside of the image bounds. Please click on the film to assign a dose.",
-                        CloseButtonText = "Ok"
-                    };
-                    await _dialogService.ShowAsync(errorDialog, System.Threading.CancellationToken.None);
-                    
-                    StatusText.Text = "Out of Image Bounds";
-                    StatusIndicator.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFFF4500"));
+                    System.Windows.MessageBox.Show("Selection is outside of the image bounds.", "Sampling Error");
                 }
 
                 // Force selection hide after any interactive prompt
@@ -834,7 +1056,6 @@ namespace FilmAnalysis
             }
         }
 
-        private void Measurement_Click(object sender, RoutedEventArgs e) { }
 
         #region Spatial Ruler & MM Logic
 
@@ -973,6 +1194,167 @@ namespace FilmAnalysis
             double top = (controlHeight - renderedHeight) / 2.0;
 
             return new System.Windows.Rect(left, top, renderedWidth, renderedHeight);
+        }
+
+        private void ShowDoseToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (ShowDoseToggle.IsChecked == true)
+            {
+                if (_doseMap == null) { ShowDoseToggle.IsChecked = false; return; }
+                _isShowingDoseMap = true;
+                MainDisplayImage.Source = GenerateDoseHeatmap();
+            }
+            else
+            {
+                _isShowingDoseMap = false;
+                MainDisplayImage.Source = _rawImageSource;
+            }
+        }
+
+        private async void ConvertToDose_Click(object sender, RoutedEventArgs e)
+        {
+            if (CurrentConfig == null || !CurrentConfig.IsValid)
+            {
+                System.Windows.MessageBox.Show("Please load or calculate a calibration first.", "No Calibration");
+                return;
+            }
+            if (_redChannel == null)
+            {
+                System.Windows.MessageBox.Show("Please load a film scan first.", "No Image");
+                return;
+            }
+
+            StatusText.Text = "Converting to Dose...";
+            StatusIndicator.Background = new SolidColorBrush(Colors.Orange);
+
+            try
+            {
+                int w = _imgWidth;
+                int h = _imgHeight;
+                _doseMap = new double[h, w];
+                _rawImageSource = MainDisplayImage.Source;
+
+                var config = CurrentConfig;
+                double delta = config.DeltaOpt;
+                string mode = config.Channel;
+
+                await Task.Run(() =>
+                {
+                    Parallel.For(0, h, y =>
+                    {
+                        for (int x = 0; x < w; x++)
+                        {
+                            _doseMap[y, x] = CalculateSinglePixelDose(x, y, mode, config, delta);
+                        }
+                    });
+                });
+
+                var heatmap = GenerateDoseHeatmap();
+                MainDisplayImage.Source = heatmap;
+                
+                _isShowingDoseMap = true;
+                ShowDoseToggle.IsChecked = true;
+                ShowDoseToggle.IsEnabled = true;
+
+                double maxDose = 0.001;
+                foreach (var d in _doseMap) if (d > maxDose) maxDose = d;
+                DoseRangeText.Text = $"0.0 - {maxDose:F2} cGy";
+
+                StatusText.Text = "Conversion Complete";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Conversion failed: {ex.Message}");
+            }
+        }
+
+        private double CalculateSinglePixelDose(int x, int y, string mode, CalibrationConfig config, double delta)
+        {
+            const double eps = 2.22e-16;
+            try
+            {
+                double rValue = _redChannel != null ? _redChannel[y, x] : 0;
+                double gValue = _greenChannel != null ? _greenChannel[y, x] : 0;
+                double bValue = _blueChannel != null ? _blueChannel[y, x] : 0;
+
+                double rOD = -Math.Log10(rValue / 65535.0 + eps);
+                double gOD = -Math.Log10(gValue / 65535.0 + eps);
+                double bOD = -Math.Log10(bValue / 65535.0 + eps);
+
+                if (mode == "Red")
+                {
+                    return Math.Max(0, FittingMath.PolyVal(config.FirstFit, rOD));
+                }
+                else if (mode == "Green")
+                {
+                    return Math.Max(0, FittingMath.PolyVal(config.FirstFit, gOD));
+                }
+                else if (mode == "Blue")
+                {
+                    return Math.Max(0, FittingMath.PolyVal(config.FirstFit, bOD));
+                }
+                else if (mode == "Red/Blue")
+                {
+                    double ratio = rOD / bOD;
+                    double firstPass = FittingMath.PolyVal(config.FirstFit, ratio);
+                    return Math.Max(0, FittingMath.PolyVal(config.SecondFit, firstPass));
+                }
+                else if (mode == "Green/Blue")
+                {
+                    double ratio = gOD / bOD;
+                    double firstPass = FittingMath.PolyVal(config.FirstFit, ratio);
+                    return Math.Max(0, FittingMath.PolyVal(config.SecondFit, firstPass));
+                }
+                else if (mode.Contains("|") || mode.StartsWith("Triple"))
+                {
+                    double doseR = FittingMath.PolyVal(config.FirstFit, rOD);
+                    double doseG = FittingMath.PolyVal(config.SecondFit, gOD);
+                    double doseB = FittingMath.PolyVal(config.ThirdFit, bOD);
+
+                    return Math.Max(0, ((doseR + doseG + doseB) / 3.0) * delta);
+                }
+            }
+            catch { }
+            return 0;
+        }
+
+        private BitmapSource GenerateDoseHeatmap()
+        {
+            int h = _imgHeight;
+            int w = _imgWidth;
+            int stride = w * 4;
+            byte[] pixels = new byte[h * stride];
+
+            double maxDose = 0.001;
+            foreach (var d in _doseMap) if (d > maxDose) maxDose = d;
+
+            Parallel.For(0, h, y =>
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    double d = _doseMap[y, x];
+                    var (R, G, B) = GetJetColor(d / maxDose);
+                    int idx = y * stride + x * 4;
+                    pixels[idx] = B;
+                    pixels[idx + 1] = G;
+                    pixels[idx + 2] = R;
+                    pixels[idx + 3] = 255;
+                }
+            });
+
+            return BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
+        }
+
+        private (byte R, byte G, byte B) GetJetColor(double v)
+        {
+            v = Math.Clamp(v, 0, 1);
+            double r = 0, g = 0, b = 0;
+            if (v < 0.25) { r = 0; g = 4 * v; b = 1; }
+            else if (v < 0.5) { r = 0; g = 1; b = 1 + 4 * (0.25 - v); }
+            else if (v < 0.75) { r = 4 * (v - 0.5); g = 1; b = 0; }
+            else { r = 1; g = 1 + 4 * (0.75 - v); b = 0; }
+            return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
         }
 
         #endregion

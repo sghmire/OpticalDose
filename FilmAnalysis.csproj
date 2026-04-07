@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="BitMiracle.LibTiff.NET" Version="2.4.660" />
+    <PackageReference Include="ScottPlot.WPF" Version="5.0.39" />
     <PackageReference Include="WPF-UI" Version="4.2.0" />
   </ItemGroup>
 

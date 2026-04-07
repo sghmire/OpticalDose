@@ -9,7 +9,8 @@
         Title="Film Analysis" Height="900" Width="1400"
         WindowStartupLocation="CenterScreen"
         ExtendsContentIntoTitleBar="True"
-        WindowBackdropType="Mica" >
+        WindowBackdropType="Mica" 
+        xmlns:ScottPlot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF">
 
     <Grid>
         <Grid.RowDefinitions>
@@ -42,6 +43,8 @@
                         <MenuItem Header="_File" Padding="5,0,5,0" Height="45">
                             <MenuItem Header="_Open..." Click="Open_Click" />
                             <MenuItem Header="Load raw film (tif/tif)" Click="LoadRawFilm_Click" />
+                            <Separator />
+                            <MenuItem Header="_Settings..." Click="Settings_Click" />
                             <Separator />
                             <MenuItem Header="E_xit" Click="Exit_Click" />
                         </MenuItem>
@@ -147,7 +150,13 @@
                                         <TextBlock Text="Dose Conversion" FontWeight="Bold" Margin="0,0,0,10" />
                                         <ui:Button x:Name="ExtractROIButton" Content="Extract ROI" Icon="{ui:SymbolIcon DrawShape24}" Width="310" Margin="0,0,0,8" Click="ExtractROI_Click" ToolTip="Select region and extract RGB intensities" />
                                         <ui:Button x:Name="ConvertToDoseButton" Content="Convert to Dose" Icon="{ui:SymbolIcon Calculator24}" Background="{DynamicResource AccentFillColorDefaultBrush}" Width="310" Margin="0,0,0,8" Click="ConvertToDose_Click" />
-                                        <ui:Button x:Name="UpdateFilmDoseButton" Content="Update Film Dose" Icon="{ui:SymbolIcon ArrowSync24}" Width="310" Margin="0,0,0,15" Click="ConvertToDose_Click" />
+                                        <ui:ToggleSwitch x:Name="ShowDoseToggle" Content="Show Dose Map" Margin="0,0,0,8" Click="ShowDoseToggle_Click" IsEnabled="False" />
+                                        <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" Padding="10,5" CornerRadius="4" Margin="0,0,0,15">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Dose Range: " VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="DoseRangeText" Text="N/A" FontWeight="Bold" Foreground="{DynamicResource AccentFillColorDefaultBrush}"/>
+                                            </StackPanel>
+                                        </Border>
 
                                         <TextBlock Text="Visual Tools" FontWeight="Bold" Margin="0,0,0,10" />
                                         <TextBlock Text="Contrast Adjustment" Margin="0,0,0,5" />
@@ -266,14 +275,10 @@
                     <!-- Right Stack: DataGrid and Profiles -->
                     <Grid Grid.Column="2">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <!-- TabControl Area -->
-                            <RowDefinition Height="*" />
-                            <!-- DataGrid Area (Fluid) -->
-                            <RowDefinition Height="Auto" />
-                            <!-- Profile Y -->
-                            <RowDefinition Height="Auto" />
-                            <!-- Profile X -->
+                            <RowDefinition Height="Auto" /> <!-- Row 0: TabControl Area -->
+                            <RowDefinition Height="*" />    <!-- Row 1: DataGrid Area -->
+                            <RowDefinition Height="*" />    <!-- Row 2: Analysis Plot Area -->
+                            <RowDefinition Height="Auto" /> <!-- Row 3: Status/Feedback Area -->
                         </Grid.RowDefinitions>
 
                         <!-- Processing Tabs Area -->
@@ -295,7 +300,7 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Config:" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                        <ComboBox x:Name="ConfigComboBox" Grid.Column="1" Height="38" HorizontalAlignment="Stretch" Margin="0,0,8,0" />
+                                        <ComboBox x:Name="ConfigComboBox" Grid.Column="1" Height="38" HorizontalAlignment="Stretch" Margin="0,0,8,0" SelectionChanged="ConfigComboBox_SelectionChanged" />
                                         <ui:Button x:Name="RefreshConfigButton" Grid.Column="2" Icon="{ui:SymbolIcon ArrowSync24}" Width="42" Height="38" Click="RefreshConfigButton_Click" ToolTip="Reload Configurations" />
                                     </Grid>
 
@@ -397,15 +402,16 @@
                                        Click="DeleteSelected_Click" />
                         </Grid>
 
-                        <Border x:Name="ProfileY" Grid.Row="2" Height="150" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="5" CornerRadius="8" Margin="0,0,0,10">
-                            <TextBlock Text="Profile Y" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        <Border Grid.Row="2" Grid.RowSpan="2" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="8" Margin="0,0,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="Analysis &amp; Calibration Plot" HorizontalAlignment="Center" Margin="5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                <ScottPlot:WpfPlot x:Name="MainPlot" Grid.Row="1" />
+                            </Grid>
                         </Border>
-
-                        <Border x:Name="ProfileX" Grid.Row="3" Height="150" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="5" CornerRadius="8" Margin="0,0,0,0">
-                            <TextBlock Text="Profile X" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                        </Border>
-
-                        <Image x:Name="CalibrationImage_Copy1" Grid.Row="1" Width="100" Height="100" HorizontalAlignment="Right" VerticalAlignment="Top" Stretch="Uniform" Margin="10" />
                     </Grid>
                 </Grid>
             </TabItem>
