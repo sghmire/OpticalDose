@@ -20,6 +20,15 @@ using System.Runtime.InteropServices;
 
 namespace FilmAnalysis
 {
+    public class RelayCommand : ICommand
+    {
+        private readonly Action _execute;
+        public RelayCommand(Action execute) { _execute = execute; }
+        public event EventHandler CanExecuteChanged { add { } remove { } }
+        public bool CanExecute(object parameter) => true;
+        public void Execute(object parameter) => _execute();
+    }
+
     public class AppSettings
     {
         public int FixedWidth { get; set; } = 100;
@@ -55,6 +64,10 @@ namespace FilmAnalysis
         private bool _isAligning = false;
         private int _alignStep = 0; // 1=Left, 2=Right, 3=Top
         private Point _alignLeft, _alignRight, _alignTop;
+
+        // Crop / ROI Filter State
+        private bool _isCropping = false;
+        private bool _isROIFiltering = false;
         private AppSettings _settings = new AppSettings();
 
         // Raw High-Precision Image Data
@@ -69,6 +82,18 @@ namespace FilmAnalysis
         private double[,] _doseMap;
         private ImageSource _rawImageSource;
         private bool _isShowingDoseMap = false;
+
+        // Undo/Redo History
+        private class ImageState
+        {
+            public double[,] Red, Green, Blue;
+            public double[,] DoseMap;
+            public int Width, Height;
+            public bool ShowingDose;
+            public string Description;
+        }
+        private readonly Stack<ImageState> _undoStack = new();
+        private readonly Stack<ImageState> _redoStack = new();
 
         public MainWindow()
         {
@@ -90,6 +115,10 @@ namespace FilmAnalysis
             
             // Register for size changes to keep rulers in sync
             MasterImageContainer.SizeChanged += (s, e) => UpdateRulers();
+
+            // Keyboard shortcuts for Undo/Redo
+            InputBindings.Add(new KeyBinding(new RelayCommand(() => Undo_Click(null, null)), Key.Z, ModifierKeys.Control));
+            InputBindings.Add(new KeyBinding(new RelayCommand(() => Redo_Click(null, null)), Key.Y, ModifierKeys.Control));
         }
 
         private void LoadSettings()
@@ -464,6 +493,108 @@ namespace FilmAnalysis
             Close();
         }
 
+        #region Undo / Redo
+
+        private static double[,] CloneArray(double[,] src)
+        {
+            if (src == null) return null;
+            return (double[,])src.Clone();
+        }
+
+        private void PushUndo(string description)
+        {
+            _undoStack.Push(new ImageState
+            {
+                Red = CloneArray(_redChannel),
+                Green = CloneArray(_greenChannel),
+                Blue = CloneArray(_blueChannel),
+                DoseMap = CloneArray(_doseMap),
+                Width = _imgWidth,
+                Height = _imgHeight,
+                ShowingDose = _isShowingDoseMap,
+                Description = description
+            });
+            _redoStack.Clear();
+            UpdateUndoRedoUI();
+        }
+
+        private void Undo_Click(object sender, RoutedEventArgs e)
+        {
+            if (_undoStack.Count == 0) return;
+
+            // Save current state to redo stack
+            _redoStack.Push(new ImageState
+            {
+                Red = CloneArray(_redChannel),
+                Green = CloneArray(_greenChannel),
+                Blue = CloneArray(_blueChannel),
+                DoseMap = CloneArray(_doseMap),
+                Width = _imgWidth,
+                Height = _imgHeight,
+                ShowingDose = _isShowingDoseMap,
+                Description = "Redo"
+            });
+
+            var state = _undoStack.Pop();
+            RestoreState(state);
+            StatusText.Text = $"Undo: {state.Description}";
+            UpdateUndoRedoUI();
+        }
+
+        private void Redo_Click(object sender, RoutedEventArgs e)
+        {
+            if (_redoStack.Count == 0) return;
+
+            // Save current state to undo stack
+            _undoStack.Push(new ImageState
+            {
+                Red = CloneArray(_redChannel),
+                Green = CloneArray(_greenChannel),
+                Blue = CloneArray(_blueChannel),
+                DoseMap = CloneArray(_doseMap),
+                Width = _imgWidth,
+                Height = _imgHeight,
+                ShowingDose = _isShowingDoseMap,
+                Description = "Undo"
+            });
+
+            var state = _redoStack.Pop();
+            RestoreState(state);
+            StatusText.Text = "Redo";
+            UpdateUndoRedoUI();
+        }
+
+        private void RestoreState(ImageState state)
+        {
+            _redChannel = state.Red;
+            _greenChannel = state.Green;
+            _blueChannel = state.Blue;
+            _doseMap = state.DoseMap;
+            _imgWidth = state.Width;
+            _imgHeight = state.Height;
+            _isShowingDoseMap = state.ShowingDose;
+
+            if (_isShowingDoseMap && _doseMap != null)
+            {
+                MainDisplayImage.Source = GenerateDoseHeatmap();
+                ShowDoseToggle.IsChecked = true;
+                ShowDoseToggle.IsEnabled = true;
+            }
+            else
+            {
+                UpdateDisplayFromRaw();
+                ShowDoseToggle.IsChecked = false;
+            }
+        }
+
+        private void UpdateUndoRedoUI()
+        {
+            UndoMenuItem.IsEnabled = _undoStack.Count > 0;
+            RedoMenuItem.IsEnabled = _redoStack.Count > 0;
+        }
+
+        #endregion
+
         private void MenuSelectCalibration_Click(object sender, RoutedEventArgs e)
         {
             if (MainTabControl == null) return;
@@ -833,6 +964,7 @@ namespace FilmAnalysis
                     Point R = CanvasToPixel(_alignRight, renderedRect);
                     Point T = CanvasToPixel(_alignTop, renderedRect);
 
+                    PushUndo("Manual Align");
                     _ = PerformManualAlignment(L, R, T, renderedRect);
                     break;
             }
@@ -970,10 +1102,536 @@ namespace FilmAnalysis
             StatusIndicator.Background = new SolidColorBrush(Colors.Green);
         }
         private void AutoAlign_Click(object sender, RoutedEventArgs e) { }
-        private void Rotation_Click(object sender, RoutedEventArgs e) { }
-        private void Flip_Click(object sender, RoutedEventArgs e) { }
-        private void Crop_Click(object sender, RoutedEventArgs e) { }
-        private void Filter_Click(object sender, RoutedEventArgs e) { }
+
+        #region Orientation (Rotation & Flip)
+
+        /// <summary>Refreshes the display based on current mode (dose map or raw image).</summary>
+        private void RefreshDisplay()
+        {
+            if (_isShowingDoseMap && _doseMap != null)
+                MainDisplayImage.Source = GenerateDoseHeatmap();
+            else
+                UpdateDisplayFromRaw();
+        }
+
+        private static double[,] Rotate2D(double[,] src, int oldH, int oldW, bool isCW)
+        {
+            var dst = new double[oldW, oldH];
+            for (int row = 0; row < oldH; row++)
+                for (int col = 0; col < oldW; col++)
+                {
+                    int nr, nc;
+                    if (isCW) { nr = col; nc = oldH - 1 - row; }
+                    else { nr = oldW - 1 - col; nc = row; }
+                    dst[nr, nc] = src[row, col];
+                }
+            return dst;
+        }
+
+        private void Rotation_Click(object sender, RoutedEventArgs e)
+        {
+            if (_redChannel == null) { System.Windows.MessageBox.Show("Please load an image first.", "No Image"); return; }
+
+            bool isCW = (sender as FrameworkElement)?.Name == "CWButton";
+            PushUndo(isCW ? "Rotate CW" : "Rotate CCW");
+
+            int oldH = _imgHeight, oldW = _imgWidth;
+            _redChannel = Rotate2D(_redChannel, oldH, oldW, isCW);
+            _greenChannel = Rotate2D(_greenChannel, oldH, oldW, isCW);
+            _blueChannel = Rotate2D(_blueChannel, oldH, oldW, isCW);
+            if (_doseMap != null) _doseMap = Rotate2D(_doseMap, oldH, oldW, isCW);
+
+            _imgWidth = oldH; _imgHeight = oldW;
+            RefreshDisplay();
+            StatusText.Text = isCW ? "Rotated CW 90°" : "Rotated CCW 90°";
+        }
+
+        private static void FlipH(double[,] data, int h, int w)
+        {
+            for (int row = 0; row < h; row++)
+                for (int col = 0; col < w / 2; col++)
+                {
+                    int m = w - 1 - col;
+                    (data[row, col], data[row, m]) = (data[row, m], data[row, col]);
+                }
+        }
+
+        private static void FlipV(double[,] data, int h, int w)
+        {
+            for (int row = 0; row < h / 2; row++)
+            {
+                int m = h - 1 - row;
+                for (int col = 0; col < w; col++)
+                    (data[row, col], data[m, col]) = (data[m, col], data[row, col]);
+            }
+        }
+
+        private void Flip_Click(object sender, RoutedEventArgs e)
+        {
+            if (_redChannel == null) { System.Windows.MessageBox.Show("Please load an image first.", "No Image"); return; }
+
+            bool isHorizontal = (sender as FrameworkElement)?.Name == "FlipHButton";
+            PushUndo(isHorizontal ? "Flip H" : "Flip V");
+
+            int h = _imgHeight, w = _imgWidth;
+            Action<double[,], int, int> flipFn = isHorizontal ? FlipH : FlipV;
+            flipFn(_redChannel, h, w);
+            flipFn(_greenChannel, h, w);
+            flipFn(_blueChannel, h, w);
+            if (_doseMap != null) flipFn(_doseMap, h, w);
+
+            RefreshDisplay();
+            StatusText.Text = isHorizontal ? "Flipped Horizontal" : "Flipped Vertical";
+        }
+
+        #endregion
+
+        #region Cropping
+
+        private void Crop_Click(object sender, RoutedEventArgs e)
+        {
+            if (_redChannel == null) { System.Windows.MessageBox.Show("Please load an image first.", "No Image"); return; }
+
+            string name = (sender as FrameworkElement)?.Name ?? "";
+
+            if (name == "ManualCropButton")
+            {
+                if (_isSelectingROI || _isAligning) return;
+                _isCropping = true;
+                _isSelectingROI = true;
+                _isFixedMode = false;
+                ROIModeOverlay.Visibility = Visibility.Collapsed;
+                AlignModeOverlay.Visibility = Visibility.Collapsed;
+                StatusText.Text = "Draw crop region...";
+                StatusIndicator.Background = new SolidColorBrush(Colors.DodgerBlue);
+            }
+            else if (name == "CenterCropButton")
+            {
+                if (!int.TryParse(CenterCropWidth.Text, out int cropW) || !int.TryParse(CenterCropHeight.Text, out int cropH))
+                {
+                    System.Windows.MessageBox.Show("Please enter valid width and height values.", "Invalid Input");
+                    return;
+                }
+
+                cropW = Math.Min(cropW, _imgWidth);
+                cropH = Math.Min(cropH, _imgHeight);
+
+                int startX = (_imgWidth - cropW) / 2;
+                int startY = (_imgHeight - cropH) / 2;
+
+                PushUndo("Center Crop");
+                ApplyCrop(startX, startY, cropW, cropH);
+                StatusText.Text = $"Center Cropped to {cropW} x {cropH}";
+            }
+        }
+
+        private static double[,] CropArray(double[,] src, int x, int y, int w, int h)
+        {
+            var dst = new double[h, w];
+            for (int row = 0; row < h; row++)
+                for (int col = 0; col < w; col++)
+                    dst[row, col] = src[y + row, x + col];
+            return dst;
+        }
+
+        private void ApplyCrop(int x, int y, int w, int h)
+        {
+            x = Math.Max(0, x); y = Math.Max(0, y);
+            w = Math.Min(w, _imgWidth - x); h = Math.Min(h, _imgHeight - y);
+            if (w <= 0 || h <= 0) return;
+
+            _redChannel = CropArray(_redChannel, x, y, w, h);
+            _greenChannel = CropArray(_greenChannel, x, y, w, h);
+            _blueChannel = CropArray(_blueChannel, x, y, w, h);
+            if (_doseMap != null) _doseMap = CropArray(_doseMap, x, y, w, h);
+
+            _imgWidth = w; _imgHeight = h;
+            RefreshDisplay();
+            StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+        }
+
+        #endregion
+
+        #region Filters, Smoothing & Interpolation
+
+        private async void Filter_Click(object sender, RoutedEventArgs e)
+        {
+            if (_redChannel == null) { System.Windows.MessageBox.Show("Please load an image first.", "No Image"); return; }
+
+            string name = (sender as FrameworkElement)?.Name ?? "";
+            bool doseMode = _isShowingDoseMap && _doseMap != null;
+
+            if (name == "MedianFilterButton")
+            {
+                if (!int.TryParse(MedianKernelSize.Text, out int kernelSize) || kernelSize < 1) kernelSize = 3;
+                if (kernelSize % 2 == 0) kernelSize++;
+                PushUndo($"Median {kernelSize}x{kernelSize}");
+                StatusText.Text = $"Applying Median Filter ({kernelSize}x{kernelSize})...";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Orange);
+
+                await Task.Run(() =>
+                {
+                    if (doseMode)
+                    {
+                        _doseMap = MedianFilter2D(_doseMap, kernelSize);
+                    }
+                    else
+                    {
+                        _redChannel = MedianFilter2D(_redChannel, kernelSize);
+                        _greenChannel = MedianFilter2D(_greenChannel, kernelSize);
+                        _blueChannel = MedianFilter2D(_blueChannel, kernelSize);
+                    }
+                });
+
+                RefreshDisplay();
+                StatusText.Text = $"Median Filter Applied ({kernelSize}x{kernelSize})";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+            }
+            else if (name == "ROIFilterButton")
+            {
+                if (_isSelectingROI || _isAligning) return;
+                _isROIFiltering = true;
+                _isSelectingROI = true;
+                _isFixedMode = false;
+                StatusText.Text = "Draw ROI region (outside will be zeroed)...";
+                StatusIndicator.Background = new SolidColorBrush(Colors.DodgerBlue);
+            }
+            else if (name == "NoiseFilterButton")
+            {
+                if (!double.TryParse(NoiseThreshold.Text, out double threshold)) threshold = 65535;
+                PushUndo("Noise Filter");
+                StatusText.Text = "Applying Noise Filter...";
+
+                await Task.Run(() =>
+                {
+                    if (doseMode)
+                    {
+                        ApplyNoiseFilter(_doseMap, threshold);
+                    }
+                    else
+                    {
+                        ApplyNoiseFilter(_redChannel, threshold);
+                        ApplyNoiseFilter(_greenChannel, threshold);
+                        ApplyNoiseFilter(_blueChannel, threshold);
+                    }
+                });
+
+                RefreshDisplay();
+                StatusText.Text = $"Noise Filter Applied (threshold: {threshold})";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+            }
+            else if (name == "SmoothButton")
+            {
+                string method = (SmoothDropDown.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Average";
+                if (!double.TryParse(SmoothStrength.Text, out double strength) || strength < 1) strength = 3;
+                int window = (int)Math.Round(strength);
+                if (window % 2 == 0) window++;
+
+                PushUndo($"{method} Smooth");
+                StatusText.Text = $"Applying {method} Smooth...";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Orange);
+
+                await Task.Run(() =>
+                {
+                    if (doseMode)
+                    {
+                        if (method == "Average") _doseMap = BoxFilter2D(_doseMap, window);
+                        else if (method == "Median") _doseMap = MedianFilter2D(_doseMap, window);
+                        else if (method == "Gaussian") _doseMap = GaussianFilter2D(_doseMap, strength);
+                    }
+                    else
+                    {
+                        if (method == "Average")
+                        {
+                            _redChannel = BoxFilter2D(_redChannel, window);
+                            _greenChannel = BoxFilter2D(_greenChannel, window);
+                            _blueChannel = BoxFilter2D(_blueChannel, window);
+                        }
+                        else if (method == "Median")
+                        {
+                            _redChannel = MedianFilter2D(_redChannel, window);
+                            _greenChannel = MedianFilter2D(_greenChannel, window);
+                            _blueChannel = MedianFilter2D(_blueChannel, window);
+                        }
+                        else if (method == "Gaussian")
+                        {
+                            _redChannel = GaussianFilter2D(_redChannel, strength);
+                            _greenChannel = GaussianFilter2D(_greenChannel, strength);
+                            _blueChannel = GaussianFilter2D(_blueChannel, strength);
+                        }
+                    }
+                });
+
+                RefreshDisplay();
+                StatusText.Text = $"{method} Smooth Applied";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+            }
+            else if (name == "InterpButton")
+            {
+                string method = (InterpolationDropDown.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Linear";
+                if (!double.TryParse(InterpScale.Text, out double scale) || scale < 1) scale = 2;
+                scale = Math.Min(scale, 10);
+
+                if (Math.Abs(scale - 1.0) < 0.01) return;
+
+                PushUndo($"Interpolation {scale:F1}x");
+                StatusText.Text = $"Interpolating ({method}, {scale:F1}x)...";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Orange);
+
+                int newW = (int)Math.Round(_imgWidth * scale);
+                int newH = (int)Math.Round(_imgHeight * scale);
+
+                await Task.Run(() =>
+                {
+                    if (doseMode)
+                    {
+                        _doseMap = Interpolate2D(_doseMap, newW, newH, method);
+                    }
+                    else
+                    {
+                        _redChannel = Interpolate2D(_redChannel, newW, newH, method);
+                        _greenChannel = Interpolate2D(_greenChannel, newW, newH, method);
+                        _blueChannel = Interpolate2D(_blueChannel, newW, newH, method);
+                    }
+                });
+
+                _imgWidth = newW; _imgHeight = newH;
+                RefreshDisplay();
+                StatusText.Text = $"Interpolated to {newW}x{newH} ({method})";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+            }
+        }
+
+        // --- Median Filter (medfilt2 equivalent) ---
+        private static double[,] MedianFilter2D(double[,] input, int kernelSize)
+        {
+            int h = input.GetLength(0), w = input.GetLength(1);
+            var output = new double[h, w];
+            int half = kernelSize / 2;
+            var buffer = new double[kernelSize * kernelSize];
+
+            for (int row = 0; row < h; row++)
+            {
+                for (int col = 0; col < w; col++)
+                {
+                    int count = 0;
+                    for (int ky = -half; ky <= half; ky++)
+                    {
+                        int ry = Math.Clamp(row + ky, 0, h - 1);
+                        for (int kx = -half; kx <= half; kx++)
+                        {
+                            int cx = Math.Clamp(col + kx, 0, w - 1);
+                            buffer[count++] = input[ry, cx];
+                        }
+                    }
+                    Array.Sort(buffer, 0, count);
+                    output[row, col] = buffer[count / 2];
+                }
+            }
+            return output;
+        }
+
+        // --- Box/Average Filter (smoothdata2 movmean equivalent) ---
+        private static double[,] BoxFilter2D(double[,] input, int kernelSize)
+        {
+            int h = input.GetLength(0), w = input.GetLength(1);
+            var output = new double[h, w];
+            int half = kernelSize / 2;
+
+            for (int row = 0; row < h; row++)
+            {
+                for (int col = 0; col < w; col++)
+                {
+                    double sum = 0; int count = 0;
+                    for (int ky = -half; ky <= half; ky++)
+                    {
+                        int ry = Math.Clamp(row + ky, 0, h - 1);
+                        for (int kx = -half; kx <= half; kx++)
+                        {
+                            int cx = Math.Clamp(col + kx, 0, w - 1);
+                            sum += input[ry, cx];
+                            count++;
+                        }
+                    }
+                    output[row, col] = sum / count;
+                }
+            }
+            return output;
+        }
+
+        // --- Gaussian Filter (imgaussfilt equivalent) ---
+        private static double[,] GaussianFilter2D(double[,] input, double sigma)
+        {
+            int kernelRadius = (int)Math.Ceiling(sigma * 3);
+            int kernelSize = kernelRadius * 2 + 1;
+
+            // Build Gaussian kernel
+            double[] kernel1D = new double[kernelSize];
+            double kernelSum = 0;
+            for (int i = 0; i < kernelSize; i++)
+            {
+                double x = i - kernelRadius;
+                kernel1D[i] = Math.Exp(-(x * x) / (2 * sigma * sigma));
+                kernelSum += kernel1D[i];
+            }
+            for (int i = 0; i < kernelSize; i++) kernel1D[i] /= kernelSum;
+
+            int h = input.GetLength(0), w = input.GetLength(1);
+
+            // Separable: horizontal pass
+            var temp = new double[h, w];
+            for (int row = 0; row < h; row++)
+            {
+                for (int col = 0; col < w; col++)
+                {
+                    double sum = 0;
+                    for (int k = -kernelRadius; k <= kernelRadius; k++)
+                    {
+                        int cx = Math.Clamp(col + k, 0, w - 1);
+                        sum += input[row, cx] * kernel1D[k + kernelRadius];
+                    }
+                    temp[row, col] = sum;
+                }
+            }
+
+            // Vertical pass
+            var output = new double[h, w];
+            for (int col = 0; col < w; col++)
+            {
+                for (int row = 0; row < h; row++)
+                {
+                    double sum = 0;
+                    for (int k = -kernelRadius; k <= kernelRadius; k++)
+                    {
+                        int ry = Math.Clamp(row + k, 0, h - 1);
+                        sum += temp[ry, col] * kernel1D[k + kernelRadius];
+                    }
+                    output[row, col] = sum;
+                }
+            }
+            return output;
+        }
+
+        // --- Noise Filter (NaN/Inf/threshold removal) ---
+        private static void ApplyNoiseFilter(double[,] data, double threshold)
+        {
+            int h = data.GetLength(0), w = data.GetLength(1);
+            for (int row = 0; row < h; row++)
+            {
+                for (int col = 0; col < w; col++)
+                {
+                    double v = data[row, col];
+                    if (double.IsNaN(v) || double.IsInfinity(v) || Math.Abs(v) > threshold)
+                        data[row, col] = 1;
+                }
+            }
+        }
+
+        // --- 2D Interpolation (interp2 equivalent) ---
+        private static double[,] Interpolate2D(double[,] input, int newW, int newH, string method)
+        {
+            int oldH = input.GetLength(0), oldW = input.GetLength(1);
+            var output = new double[newH, newW];
+
+            Parallel.For(0, newH, newRow =>
+            {
+                for (int newCol = 0; newCol < newW; newCol++)
+                {
+                    // Map output pixel to input coordinates
+                    double srcRow = (double)newRow / (newH - 1) * (oldH - 1);
+                    double srcCol = (double)newCol / (newW - 1) * (oldW - 1);
+
+                    if (method == "Nearest")
+                    {
+                        int r = (int)Math.Round(srcRow);
+                        int c = (int)Math.Round(srcCol);
+                        r = Math.Clamp(r, 0, oldH - 1);
+                        c = Math.Clamp(c, 0, oldW - 1);
+                        output[newRow, newCol] = input[r, c];
+                    }
+                    else if (method == "Linear")
+                    {
+                        output[newRow, newCol] = BilinearSample(input, srcRow, srcCol, oldH, oldW);
+                    }
+                    else // Cubic
+                    {
+                        output[newRow, newCol] = BicubicSample(input, srcRow, srcCol, oldH, oldW);
+                    }
+                }
+            });
+
+            return output;
+        }
+
+        private static double BilinearSample(double[,] data, double row, double col, int h, int w)
+        {
+            int r0 = Math.Clamp((int)row, 0, h - 2);
+            int c0 = Math.Clamp((int)col, 0, w - 2);
+            double fr = row - r0, fc = col - c0;
+            return data[r0, c0] * (1 - fr) * (1 - fc) +
+                   data[r0, c0 + 1] * (1 - fr) * fc +
+                   data[r0 + 1, c0] * fr * (1 - fc) +
+                   data[r0 + 1, c0 + 1] * fr * fc;
+        }
+
+        private static double BicubicSample(double[,] data, double row, double col, int h, int w)
+        {
+            int r0 = (int)Math.Floor(row);
+            int c0 = (int)Math.Floor(col);
+            double fr = row - r0, fc = col - c0;
+
+            double sum = 0;
+            for (int m = -1; m <= 2; m++)
+            {
+                double wr = CubicWeight(fr - m);
+                for (int n = -1; n <= 2; n++)
+                {
+                    double wc = CubicWeight(fc - n);
+                    int ri = Math.Clamp(r0 + m, 0, h - 1);
+                    int ci = Math.Clamp(c0 + n, 0, w - 1);
+                    sum += data[ri, ci] * wr * wc;
+                }
+            }
+            return sum;
+        }
+
+        private static double CubicWeight(double x)
+        {
+            x = Math.Abs(x);
+            if (x <= 1) return 1.5 * x * x * x - 2.5 * x * x + 1;
+            if (x < 2) return -0.5 * x * x * x + 2.5 * x * x - 4 * x + 2;
+            return 0;
+        }
+
+        // --- ROI Mask Filter (zero everything outside rectangle) ---
+        private void ApplyROIMask(int x, int y, int w, int h)
+        {
+            x = Math.Max(0, x); y = Math.Max(0, y);
+            w = Math.Min(w, _imgWidth - x); h = Math.Min(h, _imgHeight - y);
+            bool doseMode = _isShowingDoseMap && _doseMap != null;
+
+            for (int row = 0; row < _imgHeight; row++)
+            {
+                for (int col = 0; col < _imgWidth; col++)
+                {
+                    if (row < y || row >= y + h || col < x || col >= x + w)
+                    {
+                        if (doseMode)
+                        {
+                            _doseMap[row, col] = 0;
+                        }
+                        else
+                        {
+                            _redChannel[row, col] = 0;
+                            _greenChannel[row, col] = 0;
+                            _blueChannel[row, col] = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        #endregion
         private async void ExtractROI_Click(object sender, RoutedEventArgs e)
         {
             if (MainDisplayImage.Source == null)
@@ -1171,6 +1829,55 @@ namespace FilmAnalysis
         {
             if (!_isDrawing) return;
             _isDrawing = false;
+
+            if (_isCropping || _isROIFiltering)
+            {
+                // Convert selection rectangle to pixel coordinates
+                if (MainDisplayImage.Source is BitmapSource bs)
+                {
+                    System.Windows.Rect renderedRect = GetRenderedImageBounds(MainDisplayImage);
+                    if (renderedRect.Width <= 0 || renderedRect.Height <= 0) return;
+
+                    double xInControl = Canvas.GetLeft(SelectionRect);
+                    double yInControl = Canvas.GetTop(SelectionRect);
+                    double xRatio = bs.PixelWidth / renderedRect.Width;
+                    double yRatio = bs.PixelHeight / renderedRect.Height;
+
+                    int left = (int)((xInControl - renderedRect.X) * xRatio);
+                    int top = (int)((yInControl - renderedRect.Y) * yRatio);
+                    int width = (int)(SelectionRect.Width * xRatio);
+                    int height = (int)(SelectionRect.Height * yRatio);
+
+                    left = Math.Max(0, left); top = Math.Max(0, top);
+                    width = Math.Min(width, _imgWidth - left);
+                    height = Math.Min(height, _imgHeight - top);
+
+                    if (width > 0 && height > 0)
+                    {
+                        if (_isCropping)
+                        {
+                            PushUndo("Manual Crop");
+                            ApplyCrop(left, top, width, height);
+                            StatusText.Text = $"Cropped to {width} x {height}";
+                        }
+                        else if (_isROIFiltering)
+                        {
+                            PushUndo("ROI Filter");
+                            ApplyROIMask(left, top, width, height);
+                            RefreshDisplay();
+                            StatusText.Text = "ROI Filter Applied";
+                            StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+                        }
+                    }
+                }
+
+                _isCropping = false;
+                _isROIFiltering = false;
+                _isSelectingROI = false;
+                SelectionRect.Visibility = Visibility.Collapsed;
+                return;
+            }
+
             await PerformROIExtraction();
         }
 

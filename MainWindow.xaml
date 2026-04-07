@@ -48,6 +48,10 @@
                             <Separator />
                             <MenuItem Header="E_xit" Click="Exit_Click" />
                         </MenuItem>
+                        <MenuItem Header="_Edit" Padding="5,0,5,0" Height="45">
+                            <MenuItem x:Name="UndoMenuItem" Header="_Undo" Click="Undo_Click" InputGestureText="Ctrl+Z" IsEnabled="False" />
+                            <MenuItem x:Name="RedoMenuItem" Header="_Redo" Click="Redo_Click" InputGestureText="Ctrl+Y" IsEnabled="False" />
+                        </MenuItem>
                         <MenuItem Header="_View" Height="45">
                             <MenuItem Header="Calibration" Click="MenuSelectCalibration_Click" />
                             <MenuItem Header="Dicom View" Click="MenuSelectDicom_Click" />
@@ -116,7 +120,19 @@
                                         </Grid>
 
                                         <TextBlock Text="Cropping" FontWeight="Bold" Margin="0,0,0,10" />
-                                        <ui:Button x:Name="ManualCropButton" Content="Manual Crop" Icon="{ui:SymbolIcon Crop24}" Width="310" Margin="0,0,0,8" Click="Crop_Click" />
+                                        <ui:Button x:Name="ManualCropButton" Content="Manual Crop (Draw ROI)" Icon="{ui:SymbolIcon Crop24}" Width="310" Margin="0,0,0,8" Click="Crop_Click" />
+                                        <Grid Margin="0,0,0,4" Width="310">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="W:" VerticalAlignment="Center" Margin="0,0,4,0" Grid.Column="0" />
+                                            <TextBox x:Name="CenterCropWidth" Text="500" Grid.Column="1" Margin="0,0,8,0" />
+                                            <TextBlock Text="H:" VerticalAlignment="Center" Margin="0,0,4,0" Grid.Column="2" />
+                                            <TextBox x:Name="CenterCropHeight" Text="500" Grid.Column="3" />
+                                        </Grid>
                                         <ui:Button x:Name="CenterCropButton" Content="Center Crop" Icon="{ui:SymbolIcon CenterHorizontal24}" Width="310" Margin="0,0,0,8" Click="Crop_Click" />
                                     </StackPanel>
                                 </ScrollViewer>
@@ -127,18 +143,61 @@
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel Margin="10">
                                         <TextBlock Text="Image Enhancement" FontWeight="Bold" Margin="0,0,0,10" />
-                                        <ui:Button x:Name="MedianFilterButton" Content="Median Filter" Icon="{ui:SymbolIcon FilterSync24}" Width="310" Margin="0,0,0,8" Click="Filter_Click" />
-                                        <ui:Button x:Name="ROIFilterButton" Content="ROI Filter" Icon="{ui:SymbolIcon FilterSync24}" Width="310" Margin="0,0,0,8" Click="Filter_Click" />
-                                        <ui:Button x:Name="NoiseFilterButton" Content="Noise Filter" Icon="{ui:SymbolIcon ShieldCheckmark24}" Width="310" Margin="0,0,0,15" Click="Filter_Click" />
+                                        <Grid Margin="0,0,0,8" Width="310">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Kernel:" VerticalAlignment="Center" Margin="0,0,6,0" Grid.Column="0" />
+                                            <TextBox x:Name="MedianKernelSize" Text="3" Grid.Column="1" Margin="0,0,8,0" />
+                                            <ui:Button x:Name="MedianFilterButton" Content="Median Filter" Icon="{ui:SymbolIcon FilterSync24}" Grid.Column="2" HorizontalAlignment="Stretch" Click="Filter_Click" />
+                                        </Grid>
+                                        <Grid Margin="0,0,0,8" Width="310">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Threshold:" VerticalAlignment="Center" Margin="0,0,6,0" Grid.Column="0" />
+                                            <TextBox x:Name="NoiseThreshold" Text="65535" Grid.Column="1" Margin="0,0,8,0" />
+                                            <ui:Button x:Name="NoiseFilterButton" Content="Noise Filter" Icon="{ui:SymbolIcon ShieldCheckmark24}" Grid.Column="2" HorizontalAlignment="Stretch" Click="Filter_Click" />
+                                        </Grid>
+                                        <ui:Button x:Name="ROIFilterButton" Content="ROI Filter (Zero Outside)" Icon="{ui:SymbolIcon FilterSync24}" Width="310" Margin="0,0,0,15" Click="Filter_Click" />
 
-                                        <TextBlock Text="Smoothing &amp; Interpolation" FontWeight="Bold" Margin="0,0,0,10" />
-                                        <TextBlock Text="Smoothing Method" Margin="0,0,0,5" />
-                                        <ComboBox x:Name="SmoothDropDown" Width="310" Margin="0,0,0,8" />
-                                        <ui:Button x:Name="SmoothButton" Content="Apply Smooth" Icon="{ui:SymbolIcon Cube24}" Width="310" Margin="0,0,0,15" Click="Filter_Click" />
+                                        <TextBlock Text="Smoothing" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <ComboBox x:Name="SmoothDropDown" Width="310" Margin="0,0,0,8">
+                                            <ComboBoxItem Content="Average" IsSelected="True" />
+                                            <ComboBoxItem Content="Median" />
+                                            <ComboBoxItem Content="Gaussian" />
+                                        </ComboBox>
+                                        <Grid Margin="0,0,0,15" Width="310">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Window/σ:" VerticalAlignment="Center" Margin="0,0,6,0" Grid.Column="0" />
+                                            <TextBox x:Name="SmoothStrength" Text="3" Grid.Column="1" Margin="0,0,8,0" />
+                                            <ui:Button x:Name="SmoothButton" Content="Apply Smooth" Icon="{ui:SymbolIcon Cube24}" Grid.Column="2" HorizontalAlignment="Stretch" Click="Filter_Click" />
+                                        </Grid>
 
-                                        <TextBlock Text="Interpolation Method" Margin="0,0,0,5" />
-                                        <ComboBox x:Name="InterpolationDropDown" Width="310" Margin="0,0,0,8" />
-                                        <ui:Button x:Name="InterpButton" Content="Apply Interpolation" Icon="{ui:SymbolIcon DrawImage24}" Width="310" Click="Filter_Click" />
+                                        <TextBlock Text="Interpolation" FontWeight="Bold" Margin="0,0,0,10" />
+                                        <ComboBox x:Name="InterpolationDropDown" Width="310" Margin="0,0,0,8">
+                                            <ComboBoxItem Content="Nearest" />
+                                            <ComboBoxItem Content="Linear" IsSelected="True" />
+                                            <ComboBoxItem Content="Cubic" />
+                                        </ComboBox>
+                                        <Grid Margin="0,0,0,8" Width="310">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Scale:" VerticalAlignment="Center" Margin="0,0,6,0" Grid.Column="0" />
+                                            <TextBox x:Name="InterpScale" Text="2" Grid.Column="1" Margin="0,0,8,0" />
+                                            <ui:Button x:Name="InterpButton" Content="Apply Interpolation" Icon="{ui:SymbolIcon DrawImage24}" Grid.Column="2" HorizontalAlignment="Stretch" Click="Filter_Click" />
+                                        </Grid>
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
@@ -249,10 +308,10 @@
                                     <Line X1="0" X2="0" Y1="0" Y2="20" Stroke="Black" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Grid>
 
-                                <Rectangle x:Name="SelectionRect" 
-                                           Stroke="#FFFFFFFF" 
-                                           StrokeThickness="1" 
-                                           Fill="#CCFF0000" 
+                                <Rectangle x:Name="SelectionRect"
+                                           Stroke="Transparent"
+                                           StrokeThickness="0"
+                                           Fill="#44FF0000" 
                                            Visibility="Collapsed" />
                                 <!-- Crosshairs for Fixed ROI -->
                                  <Line x:Name="SelectionCrosshairH" Stroke="White" StrokeThickness="1" StrokeDashArray="4,4" Visibility="Collapsed" />
