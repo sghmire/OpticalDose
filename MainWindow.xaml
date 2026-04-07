@@ -8,6 +8,7 @@
         mc:Ignorable="d"
         Title="Film Analysis" Height="900" Width="1400"
         WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica" 
         xmlns:ScottPlot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF">
@@ -55,6 +56,9 @@
                         <MenuItem Header="_View" Height="45">
                             <MenuItem Header="Calibration" Click="MenuSelectCalibration_Click" />
                             <MenuItem Header="Dicom View" Click="MenuSelectDicom_Click" />
+                        </MenuItem>
+                        <MenuItem Header="_Tools" Height="45">
+                            <MenuItem Header="Jaw Size (FWHM)" Click="JawSizeMenu_Click" />
                         </MenuItem>
                     </Menu>
                 </ui:TitleBar.Header>
@@ -208,7 +212,7 @@
                                     <StackPanel Margin="10">
                                         <TextBlock Text="Dose Conversion" FontWeight="Bold" Margin="0,0,0,10" />
                                         <ui:Button x:Name="ExtractROIButton" Content="Extract ROI" Icon="{ui:SymbolIcon DrawShape24}" Width="310" Margin="0,0,0,8" Click="ExtractROI_Click" ToolTip="Select region and extract RGB intensities" />
-                                        <ui:Button x:Name="ConvertToDoseButton" Content="Convert to Dose" Icon="{ui:SymbolIcon Calculator24}" Background="{DynamicResource AccentFillColorDefaultBrush}" Width="310" Margin="0,0,0,8" Click="ConvertToDose_Click" />
+                                        <ui:Button x:Name="ConvertToDoseButton" Content="Convert to Dose" Icon="{ui:SymbolIcon Calculator24}" Background="{DynamicResource AccentFillColorDefaultBrush}" Foreground="White" Width="310" Margin="0,0,0,8" Click="ConvertToDose_Click" />
                                         <ui:ToggleSwitch x:Name="ShowDoseToggle" Content="Show Dose Map" Margin="0,0,0,8" Click="ShowDoseToggle_Click" IsEnabled="False" />
                                         <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" Padding="10,5" CornerRadius="4" Margin="0,0,0,15">
                                             <StackPanel Orientation="Horizontal">
@@ -433,7 +437,7 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <ui:Button x:Name="FitButton" Content="Calculate Fit" Icon="{ui:SymbolIcon Calculator24}" Grid.Column="0" HorizontalAlignment="Stretch" Margin="0,0,4,0" Height="34" Click="FitButton_Click" Background="{DynamicResource AccentFillColorSecondaryBrush}"/>
+                                        <ui:Button x:Name="FitButton" Content="Calculate Fit" Icon="{ui:SymbolIcon Calculator24}" Grid.Column="0" HorizontalAlignment="Stretch" Margin="0,0,4,0" Height="34" Click="FitButton_Click" Background="{DynamicResource AccentFillColorSecondaryBrush}" Foreground="White"/>
                                         <ui:Button x:Name="SaveButton" Content="Save Config" Icon="{ui:SymbolIcon Save24}" Grid.Column="1" HorizontalAlignment="Stretch" Margin="4,0,0,0" Height="34" Click="SaveButton_Click" />
                                     </Grid>
 
@@ -508,7 +512,7 @@
                               Content="Calibration" 
                               Icon="{ui:SymbolIcon AppGeneric24}" 
                               Width="135" 
-                              Height="40" 
+                              Height="30" 
                               FontSize="9"
                               VerticalContentAlignment="Center"
                               Margin="0,0,5,0"
@@ -519,7 +523,7 @@
                               Content="Dicom View" 
                               Icon="{ui:SymbolIcon ImageMultiple24}" 
                               Width="135" 
-                              Height="40" 
+                              Height="30" 
                               FontSize="9"
                               VerticalContentAlignment="Center"
                               Margin="0,0"
@@ -548,4 +552,3 @@
         </Border>
     </Grid>
 </ui:FluentWindow>
-

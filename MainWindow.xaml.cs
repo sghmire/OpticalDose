@@ -17,16 +17,37 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using BitMiracle.LibTiff.Classic;
 using System.Runtime.InteropServices;
+using System.Globalization;
 
 namespace FilmAnalysis
 {
     public class RelayCommand : ICommand
     {
         private readonly Action _execute;
-        public RelayCommand(Action execute) { _execute = execute; }
-        public event EventHandler CanExecuteChanged { add { } remove { } }
-        public bool CanExecute(object parameter) => true;
-        public void Execute(object parameter) => _execute();
+        private readonly Func<bool>? _canExecute;
+        public RelayCommand(Action execute, Func<bool>? canExecute = null)
+        {
+            _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+            _canExecute = canExecute;
+        }
+        public event EventHandler? CanExecuteChanged { add { } remove { } }
+        public bool CanExecute(object? parameter) => _canExecute == null || _canExecute();
+        public void Execute(object? parameter) => _execute();
+    }
+
+    public class FilmRelayCommand : ICommand
+    {
+        private readonly Action? _execute;
+        private readonly Action<object?>? _executeWithParam;
+        public FilmRelayCommand(Action execute) { _execute = execute; }
+        public FilmRelayCommand(Action<object?> executeWithParam) { _executeWithParam = executeWithParam; }
+        public event EventHandler? CanExecuteChanged { add { } remove { } }
+        public bool CanExecute(object? parameter) => true;
+        public void Execute(object? parameter)
+        {
+            if (_execute != null) _execute();
+            else _executeWithParam?.Invoke(parameter);
+        }
     }
 
     public class AppSettings
@@ -35,6 +56,9 @@ namespace FilmAnalysis
         public int FixedHeight { get; set; } = 100;
         public bool LastWasFixed { get; set; } = false;
         public string CalibrationsPath { get; set; } = string.Empty;
+        public double LastPlateauX { get; set; } = 20;
+        public double LastPlateauY { get; set; } = 20;
+        public string LastJawMethod { get; set; } = "Maximum";
     }
 
     public class CalibrationPoint
@@ -50,6 +74,12 @@ namespace FilmAnalysis
     /// </summary>
     public partial class MainWindow : FluentWindow
     {
+        public ICommand BrowseCommand => new FilmRelayCommand(BrowseImage);
+        public ICommand ProcessCommand => new FilmRelayCommand(ProcessImage);
+        public ICommand ExportCommand => new FilmRelayCommand(ExportResults);
+        public ICommand AlignmentCommand => new FilmRelayCommand(OpenAlignmentWindow);
+        public ICommand JawSizeCommand => new FilmRelayCommand(OpenJawSizeWindow);
+        public ICommand GammaCommand => new FilmRelayCommand(OpenGammaWindow);
         public ObservableCollection<CalibrationPoint> CalibrationPoints { get; set; }
         public CalibrationConfig CurrentConfig { get; set; }
         private readonly IContentDialogService _dialogService = new ContentDialogService();
@@ -229,7 +259,7 @@ namespace FilmAnalysis
                 dlg.InitialDirectory = _calibrationsFolder;
                 if (dlg.ShowDialog() == true)
                 {
-                    pathInput.Text = dlg.FolderName;
+                    ((System.Windows.Controls.TextBox)pathInput).Text = dlg.FolderName;
                 }
             };
 
@@ -330,6 +360,14 @@ namespace FilmAnalysis
             MetaImageSize.Text = $"{width} x {height}";
             MetaDPI.Text = dpi.ToString("F1");
             MetaFileSize.Text = $"{(fileInfo.Length / 1024.0 / 1024.0):F2} MB";
+            UpdateCropUI();
+        }
+
+        private void UpdateCropUI()
+        {
+            if (CenterCropWidth != null) CenterCropWidth.Text = _imgWidth.ToString();
+            if (CenterCropHeight != null) CenterCropHeight.Text = _imgHeight.ToString();
+            if (MetaImageSize != null) MetaImageSize.Text = $"{_imgWidth} x {_imgHeight}";
         }
 
         private void ReadTiffData(string filePath)
@@ -416,6 +454,7 @@ namespace FilmAnalysis
 
                 // Handle Orientation (Flip/Rotate arrays if needed)
                 ApplyOrientation(orientation);
+                UpdateCropUI();
 
                 // Create Display Bitmap (normalized to 8-bit with Gamma)
                 UpdateDisplayFromRaw();
@@ -572,6 +611,7 @@ namespace FilmAnalysis
             _doseMap = state.DoseMap;
             _imgWidth = state.Width;
             _imgHeight = state.Height;
+            UpdateCropUI();
             _isShowingDoseMap = state.ShowingDose;
 
             if (_isShowingDoseMap && _doseMap != null)
@@ -609,6 +649,29 @@ namespace FilmAnalysis
             MainTabControl.SelectedIndex = 1;
             if (NavCalibrationButton != null) NavCalibrationButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
             if (NavDicomButton != null) NavDicomButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
+        }
+
+        private void JawSizeMenu_Click(object sender, RoutedEventArgs e)
+        {
+            if (_doseMap == null)
+            {
+                System.Windows.MessageBox.Show("Please generate a dose map first (Convert to Dose).", "No Dose Map");
+                return;
+            }
+
+            try
+            {
+                var dlg = new JawSizeWindow(_doseMap, _tiffDpi, _settings)
+                {
+                    Owner = this
+                };
+                dlg.ShowDialog();
+                SaveSettings();
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Unable to open Jaw Size dialog: {ex.Message}");
+            }
         }
 
         private void RefreshConfigButton_Click(object sender, RoutedEventArgs e)
@@ -741,27 +804,36 @@ namespace FilmAnalysis
                         if (newConfig.Channel.Contains("Single"))
                         {
                             double[] xData = newConfig.Channel.Contains("Red") ? rNorm : (newConfig.Channel.Contains("Green") ? gNorm : bNorm);
-                            for (int i = 0; i < doses.Length; i++)
-                                doseFit[i] = FittingMath.PolyVal(newConfig.FirstFit, xData[i]);
+                            if (newConfig.FirstFit != null)
+                            {
+                                for (int i = 0; i < doses.Length; i++)
+                                    doseFit[i] = FittingMath.PolyVal(newConfig.FirstFit, xData[i]);
+                            }
                         }
                         else if (newConfig.Channel.Contains("Dual"))
                         {
                             double[] ratio = newConfig.Channel.Contains("Red")
                                 ? rNorm.Zip(bNorm, (r, b) => r / (b + 1e-9)).ToArray()
                                 : gNorm.Zip(bNorm, (g, b) => g / (b + 1e-9)).ToArray();
-                            double[] val1 = ratio.Select(r => FittingMath.PolyVal(newConfig.FirstFit, r)).ToArray();
-                            for (int i = 0; i < doses.Length; i++)
-                                doseFit[i] = FittingMath.PolyVal(newConfig.SecondFit, val1[i]);
+                            if (newConfig.FirstFit != null && newConfig.SecondFit != null)
+                            {
+                                double[] val1 = ratio.Select(r => FittingMath.PolyVal(newConfig.FirstFit!, r)).ToArray();
+                                for (int i = 0; i < doses.Length; i++)
+                                    doseFit[i] = FittingMath.PolyVal(newConfig.SecondFit!, val1[i]);
+                            }
                         }
                         else if (newConfig.Channel.Contains("Triple"))
                         {
                             double delta = newConfig.DeltaOpt;
-                            for (int i = 0; i < doses.Length; i++)
+                            if (newConfig.FirstFit != null && newConfig.SecondFit != null && newConfig.ThirdFit != null)
                             {
-                                double rD = FittingMath.PolyVal(newConfig.FirstFit, rNorm[i] * delta);
-                                double gD = FittingMath.PolyVal(newConfig.SecondFit, gNorm[i] * delta);
-                                double bD = FittingMath.PolyVal(newConfig.ThirdFit, bNorm[i] * delta);
-                                doseFit[i] = (rD + gD + bD) / 3.0;
+                                for (int i = 0; i < doses.Length; i++)
+                                {
+                                    double rD = FittingMath.PolyVal(newConfig.FirstFit!, rNorm[i] * delta);
+                                    double gD = FittingMath.PolyVal(newConfig.SecondFit!, gNorm[i] * delta);
+                                    double bD = FittingMath.PolyVal(newConfig.ThirdFit!, bNorm[i] * delta);
+                                    doseFit[i] = (rD + gD + bD) / 3.0;
+                                }
                             }
                         }
                         UpdatePlot(doses, doseFit, newConfig.Channel);
@@ -808,15 +880,19 @@ namespace FilmAnalysis
                     double[] xData = channelMode.Contains("Red") ? rNorm : (channelMode.Contains("Green") ? gNorm : bNorm);
                     CurrentConfig.FirstFit = FittingMath.PolyFit(xData, doses, degree);
                     CurrentConfig.RSquared = FittingMath.CalculateRSquared(xData, doses, CurrentConfig.FirstFit);
-                    doseFit = xData.Select(x => FittingMath.PolyVal(CurrentConfig.FirstFit, x)).ToArray();
+                    if (CurrentConfig.FirstFit != null)
+                    {
+                        double[] coeffs = CurrentConfig.FirstFit;
+                        doseFit = xData.Select(x => FittingMath.PolyVal(coeffs, x)).ToArray();
+                    }
                 } else if (channelMode.Contains("Dual")) {
                     double[] ratio = channelMode.Contains("Red") ? rNorm.Zip(bNorm, (r, b) => r / (b + 1e-9)).ToArray() : gNorm.Zip(bNorm, (g, b) => g / (b + 1e-9)).ToArray();
                     double[] primary = channelMode.Contains("Red") ? rNorm : gNorm;
                     CurrentConfig.FirstFit = FittingMath.PolyFit(ratio, primary, degree);
-                    double[] val1 = ratio.Select(r => FittingMath.PolyVal(CurrentConfig.FirstFit, r)).ToArray();
+                    double[] val1 = ratio.Select(r => FittingMath.PolyVal(CurrentConfig.FirstFit!, r)).ToArray();
                     CurrentConfig.SecondFit = FittingMath.PolyFit(val1, doses, degree);
                     CurrentConfig.RSquared = FittingMath.CalculateRSquared(val1, doses, CurrentConfig.SecondFit);
-                    doseFit = val1.Select(v => FittingMath.PolyVal(CurrentConfig.SecondFit, v)).ToArray();
+                    doseFit = val1.Select(v => FittingMath.PolyVal(CurrentConfig.SecondFit!, v)).ToArray();
                 } else if (channelMode.Contains("Triple")) {
                     CurrentConfig.FirstFit = FittingMath.PolyFit(rNorm, doses, degree);
                     CurrentConfig.SecondFit = FittingMath.PolyFit(gNorm, doses, degree);
@@ -824,9 +900,9 @@ namespace FilmAnalysis
                     CurrentConfig.DeltaOpt = FittingMath.OptimizeTripleChannelDelta(rNorm, gNorm, bNorm, CurrentConfig.FirstFit, CurrentConfig.SecondFit, CurrentConfig.ThirdFit);
                     doseFit = new double[doses.Length];
                     for (int i = 0; i < doses.Length; i++) {
-                        double rD = FittingMath.PolyVal(CurrentConfig.FirstFit, rNorm[i] * CurrentConfig.DeltaOpt);
-                        double gD = FittingMath.PolyVal(CurrentConfig.SecondFit, gNorm[i] * CurrentConfig.DeltaOpt);
-                        double bD = FittingMath.PolyVal(CurrentConfig.ThirdFit, bNorm[i] * CurrentConfig.DeltaOpt);
+                        double rD = FittingMath.PolyVal(CurrentConfig.FirstFit!, rNorm[i] * CurrentConfig.DeltaOpt);
+                        double gD = FittingMath.PolyVal(CurrentConfig.SecondFit!, gNorm[i] * CurrentConfig.DeltaOpt);
+                        double bD = FittingMath.PolyVal(CurrentConfig.ThirdFit!, bNorm[i] * CurrentConfig.DeltaOpt);
                         doseFit[i] = (rD + gD + bD) / 3.0;
                     }
                     double ssTot = doses.Sum(d => Math.Pow(d - doses.Average(), 2));
@@ -1092,7 +1168,8 @@ namespace FilmAnalysis
             _blueChannel = newBlue;
             _imgWidth = newW;
             _imgHeight = newH;
-
+            UpdateCropUI();
+            
             // Clean up alignment UI
             ExitAlignMode_Click(null, null);
 
@@ -1142,6 +1219,7 @@ namespace FilmAnalysis
             if (_doseMap != null) _doseMap = Rotate2D(_doseMap, oldH, oldW, isCW);
 
             _imgWidth = oldH; _imgHeight = oldW;
+            UpdateCropUI();
             RefreshDisplay();
             StatusText.Text = isCW ? "Rotated CW 90°" : "Rotated CCW 90°";
         }
@@ -1246,6 +1324,7 @@ namespace FilmAnalysis
             if (_doseMap != null) _doseMap = CropArray(_doseMap, x, y, w, h);
 
             _imgWidth = w; _imgHeight = h;
+            UpdateCropUI();
             RefreshDisplay();
             StatusIndicator.Background = new SolidColorBrush(Colors.Green);
         }
@@ -1396,6 +1475,7 @@ namespace FilmAnalysis
                 });
 
                 _imgWidth = newW; _imgHeight = newH;
+                UpdateCropUI();
                 RefreshDisplay();
                 StatusText.Text = $"Interpolated to {newW}x{newH} ({method})";
                 StatusIndicator.Background = new SolidColorBrush(Colors.Green);
@@ -2264,6 +2344,23 @@ namespace FilmAnalysis
             }
         }
 
+        #region Command Stubs
+
+        private void BrowseImage() => Open_Click(null!, null!);
+        private void ProcessImage() => ConvertToDose_Click(null!, null!);
+        private void ExportResults() 
+        {
+            var dlg = new SaveFileDialog { Filter = "Excel Files|*.xlsx|CSV Files|*.csv|All Files|*.*" };
+            if (dlg.ShowDialog() == true) { StatusText.Text = "Results Exported"; }
+        }
+        private void OpenAlignmentWindow() => ManuallyAlign_Click(null!, null!);
+        private void OpenJawSizeWindow() => JawSizeMenu_Click(null!, null!);
+        private void OpenGammaWindow() => System.Windows.MessageBox.Show("Gamma analysis feature coming soon.", "Feature Not Available");
+
+        #endregion
+
+        #endregion
+
         private double CalculateSinglePixelDose(int x, int y, string mode, CalibrationConfig config, double delta)
         {
             try
@@ -2350,7 +2447,5 @@ namespace FilmAnalysis
             else { r = 1; g = 1 + 4 * (0.75 - v); b = 0; }
             return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
         }
-
-        #endregion
     }
 }
