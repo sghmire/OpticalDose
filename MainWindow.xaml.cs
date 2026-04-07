@@ -148,7 +148,9 @@ namespace FilmAnalysis
             InitializeComponent();
             _dialogService.SetContentPresenter(RootContentDialogPresenter);
 
-            AnalysisComp.PlanRequested += AnalysisComp_PlanRequested;
+            // Consolidate Sync logic in code-behind for reliability
+            AnalysisComp.AnalysisRequested += AnalysisComp_SyncRequested;
+            AnalysisComp.PlanRequested += AnalysisComp_SyncRequested;
             
             LoadSettings();
 
@@ -725,31 +727,38 @@ namespace FilmAnalysis
             if (NavAnalysisButton != null) NavAnalysisButton.Appearance = index == 2 ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
         }
 
-        private void AnalysisComp_AnalysisRequested(object sender, EventArgs e)
+        private void AnalysisComp_SyncRequested(object sender, EventArgs e)
         {
-            if (_filmDoseMap == null)
-            {
-                System.Windows.MessageBox.Show("Please generate a Film Dose Map first (Calibration tab) or Import one.");
-                return;
-            }
-            AnalysisComp.SetFilmDose(_filmDoseMap, _filmDpiX, _filmDpiY);
+            SyncAllDataToAnalysis();
         }
 
-        private void AnalysisComp_PlanRequested(object sender, EventArgs e)
+        private void SyncAllDataToAnalysis()
         {
-            if (_importedPlanDose != null)
+            bool hasFilm = _filmDoseMap != null;
+            bool hasPlan = _importedPlanDose != null;
+
+            if (hasFilm)
             {
-                AnalysisComp.SetPlanDose(_importedPlanDose, 
+                AnalysisComp.SetFilmDose(_filmDoseMap, _filmDpiX, _filmDpiY);
+            }
+
+            if (hasPlan)
+            {
+                AnalysisComp.SetPlanDose(_importedPlanDose,
                                        _importedPlanDpiX, _importedPlanDpiY,
                                        _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ,
                                        _importedPlanOriginX, _importedPlanOriginY,
                                        _importedPlanSpacingYSign, _importedPlanOrientation);
-                StatusText.Text = "Imported Plan Dose Synced!";
-                StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
+            }
+
+            if (hasFilm || hasPlan)
+            {
+                StatusText.Text = "Dose Maps Synced to Analysis Tab";
+                StatusIndicator.Background = new SolidColorBrush(Colors.MediumSeaGreen);
             }
             else
             {
-                System.Windows.MessageBox.Show("No imported DICOM Dose Map found. If you have a volume open, please use 'Extract Plane' in the Dicom View tab first.", "Sync Plan Dicom");
+                System.Windows.MessageBox.Show("No dose map data available to sync. Please load or process images first.", "Sync Status");
             }
         }
 
@@ -2276,29 +2285,37 @@ namespace FilmAnalysis
 
         private async void Measurement_Click(object sender, RoutedEventArgs e)
         {
-            if (MainDisplayImage.Source == null) return;
-
-            // Identify the mode
-            if (sender is FrameworkElement btn)
+            if (MainDisplayImage.Source == null)
             {
-                if (btn.Name == "DistanceButton") _activeMeasurementMode = MeasurementMode.Distance;
-                else if (btn.Name == "AreaButton")
-                {
-                    _activeMeasurementMode = MeasurementMode.Area;
-                    // Show Tool Choice
-                    var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
-                    var rbRect = new System.Windows.Controls.RadioButton { Content = "Simple Rectangle", IsChecked = true, Margin = new Thickness(0, 0, 0, 10) };
-                    var rbFree = new System.Windows.Controls.RadioButton { Content = "Freehand Draw", Margin = new Thickness(0, 0, 0, 10) };
-                    stack.Children.Add(rbRect);
-                    stack.Children.Add(rbFree);
+                StatusText.Text = "Please load an image or dose map first.";
+                StatusIndicator.Background = new SolidColorBrush(Colors.Orange);
+                return;
+            }
 
-                    var diag = new ContentDialog { Title = "Choose Area Tool", Content = stack, PrimaryButtonText = "Select Tool", CloseButtonText = "Cancel" };
-                    var res = await _dialogService.ShowAsync(diag, System.Threading.CancellationToken.None);
-                    if (res != ContentDialogResult.Primary) { _activeMeasurementMode = MeasurementMode.None; return; }
+            // Identify the mode using direct object comparison (more robust than string Name)
+            if (sender == DistanceButton)
+            {
+                _activeMeasurementMode = MeasurementMode.Distance;
+            }
+            else if (sender == AreaButton)
+            {
+                _activeMeasurementMode = MeasurementMode.Area;
+                
+                var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+                var rbRect = new System.Windows.Controls.RadioButton { Content = "Simple Rectangle", IsChecked = true, Margin = new Thickness(0, 0, 0, 10) };
+                var rbFree = new System.Windows.Controls.RadioButton { Content = "Freehand Draw", Margin = new Thickness(0, 0, 0, 10) };
+                stack.Children.Add(rbRect);
+                stack.Children.Add(rbFree);
 
-                    _isAreaRectMode = rbRect.IsChecked == true;
-                }
-                else _activeMeasurementMode = MeasurementMode.ROIDose;
+                var diag = new ContentDialog { Title = "Choose Area Tool", Content = stack, PrimaryButtonText = "Select Tool", CloseButtonText = "Cancel" };
+                var res = await _dialogService.ShowAsync(diag, System.Threading.CancellationToken.None);
+                if (res != ContentDialogResult.Primary) { _activeMeasurementMode = MeasurementMode.None; return; }
+
+                _isAreaRectMode = rbRect.IsChecked == true;
+            }
+            else
+            {
+                _activeMeasurementMode = MeasurementMode.ROIDose;
             }
 
             _isMeasurementMode = true;

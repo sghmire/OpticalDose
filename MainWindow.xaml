@@ -527,7 +527,7 @@
 
             <!-- Analysis Tab -->
             <TabItem Header="Analysis">
-                <local:AnalysisControl x:Name="AnalysisComp" AnalysisRequested="AnalysisComp_AnalysisRequested" />
+                <local:AnalysisControl x:Name="AnalysisComp" />
             </TabItem>
         </TabControl>
 

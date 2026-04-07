@@ -94,9 +94,15 @@ namespace FilmAnalysis
 
         private void CheckReady()
         {
-            bool both = _filmDose != null && _planDose != null;
-            RunAnalysisButton.IsEnabled = both;
-            SelectRoiButton.IsEnabled = (_filmDose != null || _planDose != null);
+            bool hasFilm = _filmDose != null;
+            bool hasPlan = _planDose != null;
+            
+            RunAnalysisButton.IsEnabled = (hasFilm && hasPlan);
+            SelectRoiButton.IsEnabled = (hasFilm || hasPlan);
+
+            // Update Sync Button Appearances to indicate if data is already present
+            SyncFilmButton.Appearance = hasFilm ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
+            SyncDicomButton.Appearance = hasPlan ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
         }
 
         private void RefreshImages()
