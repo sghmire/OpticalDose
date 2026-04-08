@@ -17,10 +17,14 @@
         <Border Grid.Column="0" Margin="0,0,10,0" Padding="15" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" /> <!-- Header -->
-                    <RowDefinition Height="Auto" /> <!-- Navigation Sliders -->
-                    <RowDefinition Height="*" />    <!-- Metadata -->
-                    <RowDefinition Height="Auto" /> <!-- Extraction -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Header -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Navigation Sliders -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Metadata -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Extraction -->
                 </Grid.RowDefinitions>
 
                 <!-- Header Actions -->
@@ -36,14 +40,14 @@
                                FontSize="11"
                                FontWeight="SemiBold"
                                Click="LoadDicomSet_Click" />
-                    
+
 
                 </StackPanel>
 
                 <!-- Navigation Sliders -->
                 <StackPanel Grid.Row="1" Margin="0,0,0,15">
                     <TextBlock Text="Multi-Planar Navigation" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
-                    
+
                     <!-- Z Slider (Axial) -->
                     <TextBlock Text="Z-Axis (Superior/Inferior)" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     <Grid Margin="0,2,0,8">
@@ -86,6 +90,14 @@
 
                 <!-- Center Content: Alignment -->
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform/>
+                            <SkewTransform AngleX="-0.429"/>
+                            <RotateTransform/>
+                            <TranslateTransform X="-0.993"/>
+                        </TransformGroup>
+                    </ScrollViewer.RenderTransform>
                     <StackPanel Margin="0,0,10,0">
                         <!-- Coordinate Alignment -->
                         <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,10">
@@ -94,7 +106,7 @@
                                     <TextBlock Text="Coordinate Alignment" Style="{StaticResource DosimetrySectionHeader}" VerticalAlignment="Center" />
                                     <ui:ToggleSwitch x:Name="TpsModeToggle" Content="TPS Mode" HorizontalAlignment="Right" IsChecked="True" Click="TpsMode_Checked" />
                                 </Grid>
-                                
+
                                 <TextBlock Text="Plan Isocenter (DICOM LPS, mm)" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,5" />
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -132,7 +144,7 @@
                             <ui:Button x:Name="GoToMaxDoseBtn" Grid.Column="2" Icon="{ui:SymbolIcon Star24}" Width="42" Height="36" Appearance="Secondary" Padding="0" IsEnabled="False" Click="GoToMaxDose_Click" ToolTip="Go to Maximum Dose Location" />
                         </Grid>
                     </StackPanel>
-                    
+
                     <!-- Extraction -->
                     <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
@@ -234,19 +246,19 @@
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Patient:" Margin="0,0,10,1" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                 <TextBlock x:Name="MetaPatient" Grid.Row="0" Grid.Column="1" Text="N/A" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                
+
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Patient ID:" Margin="0,0,10,1" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                 <TextBlock x:Name="MetaPatientId" Grid.Row="1" Grid.Column="1" Text="N/A" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Dim:" Margin="0,0,10,1" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                 <TextBlock x:Name="MetaDim" Grid.Row="2" Grid.Column="1" Text="0x0x0" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                                
+
                                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Spacing:" Margin="0,0,10,1" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                 <TextBlock x:Name="MetaSpacing" Grid.Row="3" Grid.Column="1" Text="0.0, 0.0 mm" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                                
+
                                 <TextBlock Grid.Row="4" Grid.Column="0" Text="Thk:" Margin="0,0,10,1" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                 <TextBlock x:Name="MetaThk" Grid.Row="4" Grid.Column="1" Text="0.0 mm" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                                
+
                                 <TextBlock Grid.Row="5" Grid.Column="0" Text="Max Dose:" Margin="0,0,10,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                 <TextBlock x:Name="MetaMaxDose" Grid.Row="5" Grid.Column="1" Text="0.00 cGy" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                             </Grid>
@@ -256,7 +268,7 @@
                             <!-- Voxel Coordinates -->
                             <TextBlock Text="Voxel Coordinates" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,2" />
                             <TextBlock x:Name="LpsCoordText" Text="X: 0.0, Y: 0.0, Z: 0.0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            
+
                             <Separator Margin="0,6" Background="{DynamicResource ControlElevationBorderBrush}" />
 
                             <!-- Dose at Cursor -->

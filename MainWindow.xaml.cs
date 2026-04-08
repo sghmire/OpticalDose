@@ -450,37 +450,13 @@ namespace FilmAnalysis
 
             stack.Children.Add(new System.Windows.Controls.TextBlock
             {
-                Text = "A professional suite for film dosimetry and analysis.\nDeveloped for clinical precision and efficiency.",
+                Text = "Film dosimetry and analysis.\nDeveloped for clinical precision and efficiency.",
                 TextWrapping = TextWrapping.Wrap,
                 TextAlignment = TextAlignment.Center,
                 Margin = new Thickness(0, 0, 0, 10),
                 Foreground = (Brush)FindResource("TextFillColorSecondaryBrush")
             });
 
-            // Math documentation
-            stack.Children.Add(new System.Windows.Controls.TextBlock
-            {
-                Text = "Math Reference",
-                FontSize = 14,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 10, 0, 4)
-            });
-
-            var docText = "• Optical Density (OD): OD = -log10(pixel/65535).\n" +
-                          "• Single-channel fit: dose = Poly(OD) using Vandermonde LS with ridge λ=1e-8.\n" +
-                          "• Dual-channel fit: ratio = OD(primary)/OD(blue); dose = Poly2(Poly1(ratio)).\n" +
-                          "• Triple-channel fit: per-channel Poly(OD); delta chosen by minimizing (avgDose - refDose)^2; dose = mean of channel doses.\n" +
-                          "• Gamma analysis: classic Low criterion with DD%/DTA mm, optional global/local norm, sub-pixel search, bicubic interp, uncertainty margin.\n" +
-                          "• FWHM field size: profiles normalized; edges at 50% of peak (max/mean/median); FWHM = right-left; reported mean±SD across sampled lines.\n" +
-                          "• Interpolation: nearest/linear/bicubic with clamped borders; guards against 1-pixel dimensions.\n" +
-                          "• Filters: median/box/gaussian with sigma→kernel; noise filter clamps NaN/Inf/outliers.";
-
-            stack.Children.Add(new System.Windows.Controls.TextBlock
-            {
-                Text = docText,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 6)
-            });
 
             var dialog = new ContentDialog(_dialogService.GetContentPresenter())
             {
