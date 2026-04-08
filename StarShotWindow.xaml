@@ -1,0 +1,177 @@
+<ui:FluentWindow x:Class="FilmQA.StarShotWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:scott="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
+        Title="Star Shot Analysis" Height="820" Width="1150"
+        Icon="/Icon.png"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource ApplicationBackgroundBrush}"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+        WindowBackdropType="None"
+        MouseDown="Window_MouseDown">
+    
+    <Grid Margin="15">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="310" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ════ Sidebar ════ -->
+        <Border Grid.Column="0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="0,0,1,0" Padding="0,0,15,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="Analysis Parameters" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,15" />
+
+                    <!-- Analysis Circle -->
+                    <ui:Card Padding="12" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="Analysis Region" FontWeight="Bold" Margin="0,0,0,8" />
+
+                            <TextBlock TextWrapping="Wrap" FontSize="10.5"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Margin="0,0,0,10">
+                                Draw a circle on the image to set the analysis region.
+                                Drag outward from the picked center to resize.
+                            </TextBlock>
+
+                            <ui:Button x:Name="DrawCircleButton"
+                                       Content="Draw Circle on Image"
+                                       Icon="{ui:SymbolIcon Circle24}"
+                                       Appearance="Secondary"
+                                       HorizontalAlignment="Stretch"
+                                       Height="38"
+                                       Margin="0,0,0,8"
+                                       Click="DrawCircle_Click" />
+
+                            <!-- Live radius readout -->
+                            <Border x:Name="CircleInfoBorder"
+                                    Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                                    CornerRadius="4" Padding="8,6" Margin="0,0,0,0">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Circle24" FontSize="13" Margin="0,0,6,0"
+                                                   Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                                    <TextBlock x:Name="CircleRadiusText"
+                                               Text="No circle drawn yet"
+                                               FontSize="11" FontStyle="Italic"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ui:Card>
+
+                    <!-- Detection settings -->
+                    <ui:Card Padding="12" Margin="0,0,0,20">
+                        <StackPanel>
+                            <TextBlock Text="Detection Settings" FontWeight="Bold" Margin="0,0,0,10" />
+                            <TextBlock Text="Threshold (%)" FontSize="11" Margin="0,0,0,5" />
+                            <ui:NumberBox x:Name="ThresholdInput" Value="50" Minimum="5" Maximum="95"
+                                          SmallChange="5" Margin="0,0,0,18" />
+
+                            <ui:Button x:Name="RunButton"
+                                       Content="Run Analysis"
+                                       Icon="{ui:SymbolIcon Play24}"
+                                       Appearance="Primary"
+                                       HorizontalAlignment="Stretch"
+                                       Height="42"
+                                       Click="RunAnalysis_Click" />
+                        </StackPanel>
+                    </ui:Card>
+
+                    <!-- Results -->
+                    <TextBlock Text="Results" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
+                    <ui:Card Padding="15" Margin="0,0,0,20">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,8">
+                                <TextBlock Text="Isocenter Diameter:" VerticalAlignment="Center" FontSize="12" />
+                                <TextBlock x:Name="IsoDiameterText" Text="--- mm"
+                                           HorizontalAlignment="Right" FontWeight="Bold" FontSize="15"
+                                           Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                            </Grid>
+                            <Separator Margin="0,4,0,8" />
+                            <TextBlock x:Name="ResultSummaryText"
+                                       Text="Run analysis to see results."
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </ui:Card>
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ui:Button Grid.Column="0" Content="Print Report" Icon="{ui:SymbolIcon Print24}"
+                                   Appearance="Info" Opacity="0.75" HorizontalAlignment="Stretch" 
+                                   Margin="0,0,5,0" Click="PrintReport_Click" />
+                        <ui:Button Grid.Column="1" Content="Close" Icon="{ui:SymbolIcon Dismiss24}"
+                                   Appearance="Danger" Opacity="0.75" HorizontalAlignment="Stretch" 
+                                   Margin="5,0,0,0" Click="Close_Click" />
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- ════ Main Content Area ════ -->
+        <Grid Grid.Column="1" Margin="15,0,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="190" />
+            </Grid.RowDefinitions>
+
+            <!-- Image + Overlays -->
+            <Border Grid.Row="0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="4" Padding="5"
+                    Background="{DynamicResource ControlFillColorDefaultBrush}">
+                <Grid>
+                    <Canvas x:Name="MainCanvas" Background="Transparent" ClipToBounds="True"
+                            MouseDown="MainCanvas_MouseDown"
+                            MouseMove="MainCanvas_MouseMove"
+                            MouseUp="MainCanvas_MouseUp"
+                            Cursor="Arrow"
+                            SizeChanged="MainCanvas_SizeChanged">
+
+                        <Image x:Name="StarShotImage" Stretch="Uniform"
+                               Width="{Binding ActualWidth, ElementName=MainCanvas}"
+                               Height="{Binding ActualHeight, ElementName=MainCanvas}"
+                               IsHitTestVisible="False" />
+
+                        <!-- Post-analysis overlays (spokes, isocenter circle, cross) -->
+                        <Canvas x:Name="OverlayCanvas"
+                                Width="{Binding ActualWidth, ElementName=MainCanvas}"
+                                Height="{Binding ActualHeight, ElementName=MainCanvas}"
+                                IsHitTestVisible="False" />
+
+                        <!-- Interactive analysis circle (dashed, yellow) — always on top -->
+                        <Ellipse x:Name="AnalysisCircleEl"
+                                 Stroke="#FFD700" StrokeThickness="2"
+                                 StrokeDashArray="8,4"
+                                 Visibility="Collapsed"
+                                 IsHitTestVisible="False" />
+                    </Canvas>
+
+                    <TextBlock x:Name="EmptyMessage" Text="Loading image data…"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                    <!-- Hint banner shown while drawing -->
+                    <Border x:Name="DrawHintBanner" VerticalAlignment="Top" HorizontalAlignment="Center"
+                            Margin="0,8,0,0" Padding="10,5" CornerRadius="20"
+                            Background="#AA1A1A2E" Visibility="Collapsed">
+                        <TextBlock Text="🖱 Drag to set radius — release to confirm"
+                                   Foreground="White" FontSize="12" />
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Spoke profile plot -->
+            <Border Grid.Row="1" Margin="0,12,0,0"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="4" Padding="5">
+                <scott:WpfPlot x:Name="AnalysisPlot" />
+            </Border>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

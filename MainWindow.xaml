@@ -111,7 +111,8 @@
                         </MenuItem>
 
                         <MenuItem Header="_Tools" Height="45">
-                            <MenuItem Header="Jaw Size (FWHM)" Click="JawSizeMenu_Click" />
+                            <MenuItem Header="Field size (FWHM)" Click="FieldSizeMenu_Click" />
+                            <MenuItem Header="Star shot analysis" Click="StarShotMenu_Click" />
                         </MenuItem>
                         <MenuItem Header="_Help" Height="45">
                             <MenuItem Header="_About" Click="About_Click" />
@@ -163,6 +164,7 @@
                                     <StackPanel Margin="10">
                                         <TextBlock Text="Alignment Tools" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <ui:Button x:Name="AutoAlignCenterButton" Content="Auto Center" Icon="{ui:SymbolIcon TargetArrow24}" Width="310" Margin="0,0,0,8" Click="AutoCenter_Click" />
+                                        <ui:Button x:Name="PickCenterButton" Content="Pick Center Point" Icon="{ui:SymbolIcon CursorClick24}" Width="310" Margin="0,0,0,8" Click="PickCenter_Click" />
                                         <ui:Button x:Name="ManuallyAlignButton" Content="Manually Align (3-Point)" Icon="{ui:SymbolIcon Cursor24}" Width="310" Margin="0,0,0,8" Click="ManuallyAlign_Click" />
                                         <ui:Button x:Name="AutoAlignImageButton" Content="Auto Align Image" Icon="{ui:SymbolIcon DrawImage24}" Width="310" Margin="0,0,0,15" Click="AutoAlign_Click" />
 

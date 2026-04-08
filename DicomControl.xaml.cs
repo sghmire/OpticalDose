@@ -210,23 +210,72 @@ namespace FilmQA
                 }
             }
 
+            // ── Pass 1: find absolute peak (for display) ──────────────────────
             double maxVal = -1;
-            _maxDoseX = _maxDoseY = _maxDoseZ = 0;
             for (int f = 0; f < frames; f++)
-            {
                 for (int r = 0; r < rows; r++)
-                {
                     for (int c = 0; c < cols; c++)
-                    {
                         if (_doseVolume[f, r, c] > maxVal)
-                        {
                             maxVal = _doseVolume[f, r, c];
-                            _maxDoseZ = f; _maxDoseY = r; _maxDoseX = c;
-                        }
+
+            MetaMaxDose.Text = $"{maxVal * _doseGridScaling * 100.0:F2} cGy";
+
+            // ── Pass 2: dose-weighted centroid of high-dose region (for nav) ──
+            // Only consider voxels ≥95% of Dmax; use 1-voxel margin to keep
+            // the 3×3×3 kernel safely within bounds.
+            double gate = maxVal * 0.95;
+            double wSum = 0, wX = 0, wY = 0, wZ = 0;
+
+            int fLo = Math.Max(1, 0), fHi = Math.Max(frames - 1, 1);
+            int rLo = Math.Max(1, 0), rHi = Math.Max(rows  - 1, 1);
+            int cLo = Math.Max(1, 0), cHi = Math.Max(cols  - 1, 1);
+
+            for (int f = fLo; f < fHi; f++)
+            {
+                for (int r = rLo; r < rHi; r++)
+                {
+                    for (int c = cLo; c < cHi; c++)
+                    {
+                        double v = _doseVolume[f, r, c];
+                        if (v < gate) continue;          // threshold gate
+
+                        // 3×3×3 neighbourhood average as the voxel weight
+                        double nbAvg = 0;
+                        for (int df = -1; df <= 1; df++)
+                            for (int dr = -1; dr <= 1; dr++)
+                                for (int dc = -1; dc <= 1; dc++)
+                                    nbAvg += _doseVolume[f + df, r + dr, c + dc];
+                        nbAvg /= 27.0;
+
+                        wX   += nbAvg * c;
+                        wY   += nbAvg * r;
+                        wZ   += nbAvg * f;
+                        wSum += nbAvg;
                     }
                 }
             }
-            MetaMaxDose.Text = $"{maxVal * _doseGridScaling * 100.0:F2} cGy";
+
+            if (wSum > 0)
+            {
+                _maxDoseX = (int)Math.Round(wX / wSum);
+                _maxDoseY = (int)Math.Round(wY / wSum);
+                _maxDoseZ = (int)Math.Round(wZ / wSum);
+            }
+            else
+            {
+                // Fallback: use single-voxel absolute peak
+                _maxDoseX = _maxDoseY = _maxDoseZ = 0;
+                for (int f = 0; f < frames; f++)
+                    for (int r = 0; r < rows; r++)
+                        for (int c = 0; c < cols; c++)
+                            if (_doseVolume[f, r, c] >= maxVal)
+                            { _maxDoseZ = f; _maxDoseY = r; _maxDoseX = c; }
+            }
+
+            // Clamp to valid bounds
+            _maxDoseX = Math.Clamp(_maxDoseX, 0, cols  - 1);
+            _maxDoseY = Math.Clamp(_maxDoseY, 0, rows  - 1);
+            _maxDoseZ = Math.Clamp(_maxDoseZ, 0, frames - 1);
 
             // 3. UI Setup
             _isUpdatingSliders = true;
@@ -1060,8 +1109,23 @@ namespace FilmQA
             _currentY = (int)YSlider.Value;
             _currentZ = (int)ZSlider.Value;
 
+            // Auto-set isocenter to the max-dose centroid so the user can
+            // immediately extract a plane relative to the dose peak.
+            double isoX = _xPositions![_maxDoseX];
+            double isoY = _yPositions![_maxDoseY];
+            double isoZ = _zPositions![_maxDoseZ];
+            IsoXInput.Value = isoX;
+            IsoYInput.Value = isoY;
+            IsoZInput.Value = isoZ;
+
             UpdateAllViews();
-            StatusText.Text = $"Navigated to Maximum Dose location: ({XCoordInput.Value:F1}, {YCoordInput.Value:F1}, {ZCoordInput.Value:F1})";
+
+            // Report dose value at the centroid in status bar
+            double doseAtPeak = _doseVolume[_maxDoseZ, _maxDoseY, _maxDoseX]
+                                * _doseGridScaling * 100.0;
+            StatusText.Text = $"Max dose region: {doseAtPeak:F1} cGy  " +
+                              $"at ({isoX:F1}, {isoY:F1}, {isoZ:F1}) mm  " +
+                              $"[centroid of ≥95% Dmax]"; 
         }
 
         private void StructureCombo_Changed(object sender, SelectionChangedEventArgs e) => DrawContours();

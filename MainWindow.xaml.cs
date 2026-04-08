@@ -33,7 +33,7 @@ namespace FilmQA
         public ICommand ProcessCommand => new FilmRelayCommand(ProcessImage);
         public ICommand ExportCommand => new FilmRelayCommand(ExportResults);
         public ICommand AlignmentCommand => new FilmRelayCommand(OpenAlignmentWindow);
-        public ICommand JawSizeCommand => new FilmRelayCommand(OpenJawSizeWindow);
+        public ICommand FieldSizeCommand => new FilmRelayCommand(OpenFieldSizeWindow);
         public ICommand GammaCommand => new FilmRelayCommand(OpenGammaWindow);
         public ObservableCollection<CalibrationPoint> CalibrationPoints { get; set; } = new();
         public CalibrationConfig? CurrentConfig { get; set; }
@@ -60,6 +60,8 @@ namespace FilmQA
         private MeasurementMode _activeMeasurementMode = MeasurementMode.None;
         private bool _isAreaRectMode = false;
         private List<Point> _measurementPoints = new();
+        private bool _isPickingCenter = false;
+        private Point? _referenceCenterPixel;
 
         // Raw High-Precision Image Data
         private double[,]? _redChannel;
@@ -218,11 +220,12 @@ namespace FilmQA
 
                 doc.Blocks.Add(new Paragraph(new Run("Film Dosimetry Report"))
                 {
-                    FontSize = 24,
+                    FontSize = 22,
                     FontWeight = FontWeights.Bold,
                     TextAlignment = TextAlignment.Center,
                     Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(173, 216, 230)),
-                    Padding = new Thickness(6)
+                    Padding = new Thickness(6),
+                    Margin = new Thickness(0, 0, 0, 8)
                 });
 
                 var infoTable = new Table();
@@ -1009,7 +1012,7 @@ namespace FilmQA
             StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
         }
 
-        private void JawSizeMenu_Click(object sender, RoutedEventArgs e)
+        private void FieldSizeMenu_Click(object sender, RoutedEventArgs e)
         {
             if (_doseMap == null)
             {
@@ -1019,7 +1022,7 @@ namespace FilmQA
 
             try
             {
-                var dlg = new JawSizeWindow(_doseMap, _dpiX, _settings)
+                var dlg = new FieldSizeWindow(_doseMap, _dpiX, _settings)
                 {
                     Owner = this
                 };
@@ -1028,7 +1031,38 @@ namespace FilmQA
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Unable to open Jaw Size dialog: {ex.Message}");
+                System.Windows.MessageBox.Show($"Unable to open Field size dialog: {ex.Message}");
+            }
+        }
+
+        private void StarShotMenu_Click(object sender, RoutedEventArgs e)
+        {
+            if (_redChannel == null && _doseMap == null)
+            {
+                System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data");
+                return;
+            }
+
+            if (_referenceCenterPixel == null)
+            {
+                System.Windows.MessageBox.Show("Please use the 'Pick Center' tool first to select the approximate center of the Star Shot.", "No Center Picked");
+                return;
+            }
+
+            try
+            {
+                // Prefer Dose Map if available, else use Red channel (typical for star shot film)
+                double[,] data = _doseMap ?? _redChannel!;
+                
+                var dlg = new StarShotWindow(data, _dpiX, _referenceCenterPixel.Value)
+                {
+                    Owner = this
+                };
+                dlg.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Unable to open Star Shot dialog: {ex.Message}");
             }
         }
 
@@ -1329,6 +1363,39 @@ namespace FilmQA
                     RefreshConfigs(); // Auto-refresh dropdown
                 } catch (Exception ex) { System.Windows.MessageBox.Show("Save failed: " + ex.Message); }
             }
+        }
+
+        private void PickCenter_Click(object sender, RoutedEventArgs e)
+        {
+            if (MainDisplayImage.Source == null || (_redChannel == null && _doseMap == null))
+            {
+                System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data");
+                return;
+            }
+
+            ResetToolState();
+            _isPickingCenter = true;
+            ShowToolOverlay("Mode: Pick Reference Center");
+            StatusText.Text = "Mode: Click on image to set center point";
+            StatusIndicator.Background = new SolidColorBrush(Colors.DodgerBlue);
+        }
+
+        private void HandleCenterPick(Point canvasPoint)
+        {
+            _referenceCenterPixel = ControlToPixel(canvasPoint);
+
+            // Update UI Marker
+            Canvas.SetLeft(AlignMarkerIso, canvasPoint.X - 7);
+            Canvas.SetTop(AlignMarkerIso, canvasPoint.Y - 7);
+            AlignMarkerIso.Visibility = Visibility.Visible;
+
+            _isPickingCenter = false;
+            SelectionCrosshairH.Visibility = Visibility.Collapsed;
+            SelectionCrosshairV.Visibility = Visibility.Collapsed;
+
+            HideToolOverlay();
+            StatusText.Text = $"Center Picked: {_referenceCenterPixel.Value.X:F1}, {_referenceCenterPixel.Value.Y:F1}";
+            StatusIndicator.Background = new SolidColorBrush(Colors.Green);
         }
 
         private void AutoCenter_Click(object sender, RoutedEventArgs e) { }
@@ -1962,6 +2029,7 @@ namespace FilmQA
             _isAreaRectMode = false;
             _isAligning = false;
             _isMeasurementMode = false;
+            _isPickingCenter = false;
 
             SelectionRect.Visibility = Visibility.Collapsed;
             SelectionCrosshairH.Visibility = Visibility.Collapsed;
@@ -2013,6 +2081,12 @@ namespace FilmQA
             if (_isAligning)
             {
                 HandleAlignmentClick(e.GetPosition(SelectionCanvas));
+                return;
+            }
+
+            if (_isPickingCenter)
+            {
+                HandleCenterPick(e.GetPosition(SelectionCanvas));
                 return;
             }
 
@@ -2074,6 +2148,21 @@ namespace FilmQA
         private void Image_MouseMove(object sender, MouseEventArgs e)
         {
             UpdateStatusCoordinates(e);
+
+            if (_isPickingCenter)
+            {
+                Point pos = e.GetPosition(SelectionCanvas);
+                SelectionCrosshairH.X1 = 0;
+                SelectionCrosshairH.X2 = SelectionCanvas.ActualWidth;
+                SelectionCrosshairH.Y1 = SelectionCrosshairH.Y2 = pos.Y;
+                SelectionCrosshairH.Visibility = Visibility.Visible;
+
+                SelectionCrosshairV.X1 = SelectionCrosshairV.X2 = pos.X;
+                SelectionCrosshairV.Y1 = 0;
+                SelectionCrosshairV.Y2 = SelectionCanvas.ActualHeight;
+                SelectionCrosshairV.Visibility = Visibility.Visible;
+                return;
+            }
 
             if (!_isSelectingROI) return;
 
@@ -3031,7 +3120,7 @@ namespace FilmQA
             }
         }
         private void OpenAlignmentWindow() => ManuallyAlign_Click(null!, null!);
-        private void OpenJawSizeWindow() => JawSizeMenu_Click(null!, null!);
+        private void OpenFieldSizeWindow() => FieldSizeMenu_Click(null!, null!);
         private void OpenGammaWindow() => System.Windows.MessageBox.Show("Gamma analysis feature coming soon.", "Feature Not Available");
 
         #endregion

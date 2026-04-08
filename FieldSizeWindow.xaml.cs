@@ -14,7 +14,7 @@ using System.Printing;
 
 namespace FilmQA
 {
-    public partial class JawSizeWindow : FluentWindow
+    public partial class FieldSizeWindow : FluentWindow
     {
         private readonly double[,] _doseMap;
         private readonly double _dpi;
@@ -27,7 +27,7 @@ namespace FilmQA
         private string _lastMethod = "Maximum";
         private double _lastPlateauX, _lastPlateauY;
 
-        public JawSizeWindow(double[,] doseMap, double dpi, AppSettings settings)
+        public FieldSizeWindow(double[,] doseMap, double dpi, AppSettings settings)
         {
             InitializeComponent();
             _doseMap = doseMap ?? throw new ArgumentNullException(nameof(doseMap));
@@ -312,6 +312,12 @@ namespace FilmQA
             this.Close();
         }
 
+        private void Window_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
+                this.DragMove();
+        }
+
         private void PrintReport_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -365,7 +371,7 @@ namespace FilmQA
                 {
                     doc.PageHeight = pd.PrintableAreaHeight;
                     doc.PageWidth = pd.PrintableAreaWidth;
-                    pd.PrintDocument(((IDocumentPaginatorSource)doc).DocumentPaginator, "Jaw Size Report");
+                    pd.PrintDocument(((IDocumentPaginatorSource)doc).DocumentPaginator, "Field size Report");
                 }
             }
             catch (Exception ex)
