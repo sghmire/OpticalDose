@@ -7,6 +7,10 @@ using System.Windows;
 using System.Windows.Controls;
 using Colors = ScottPlot.Colors;
 using Wpf.Ui.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Documents;
+using System.Printing;
 
 namespace FilmAnalysis
 {
@@ -17,6 +21,11 @@ namespace FilmAnalysis
         private readonly double _mmPerPixelX;
         private readonly double _mmPerPixelY;
         private AppSettings _settings;
+
+        // Cached results for reporting
+        private double _lastFwhmX, _lastFwhmY, _lastStdX, _lastStdY, _lastCoverage;
+        private string _lastMethod = "Maximum";
+        private double _lastPlateauX, _lastPlateauY;
 
         public JawSizeWindow(double[,] doseMap, double dpi, AppSettings settings)
         {
@@ -171,6 +180,12 @@ namespace FilmAnalysis
                               $"Coverage = {coverage:F2} mm²\n" +
                               $"Method = {method}";
 
+            _lastFwhmX = meanX; _lastStdX = stdX;
+            _lastFwhmY = meanY; _lastStdY = stdY;
+            _lastCoverage = coverage;
+            _lastMethod = method;
+            _lastPlateauX = plateauX; _lastPlateauY = plateauY;
+
             PlotProfiles(XPlot, xCoords, xProfiles, leftX.Average(), rightX.Average(), method, "XX Profile", meanX, stdX, plateauX / 2.0);
             PlotProfiles(YPlot, yCoords, yProfiles, leftY.Average(), rightY.Average(), method, "YY Profile", meanY, stdY, plateauY / 2.0);
         }
@@ -295,6 +310,89 @@ namespace FilmAnalysis
         private void Close_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private void PrintReport_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (double.IsNaN(_lastFwhmX) || _lastFwhmX == 0)
+                    ComputeAndPlot(_settings.LastPlateauX, _settings.LastPlateauY, _settings.LastJawMethod.ToLowerInvariant());
+
+                var doc = new FlowDocument
+                {
+                    PagePadding = new Thickness(40),
+                    ColumnWidth = double.PositiveInfinity,
+                    FontFamily = new FontFamily("Segoe UI")
+                };
+
+                var header = new Paragraph(new Run("FWHM Field Size Report"))
+                {
+                    FontSize = 22,
+                    FontWeight = FontWeights.Bold,
+                    TextAlignment = TextAlignment.Center,
+                    Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(173, 216, 230)), // light blue, matches film report
+                    Padding = new Thickness(6),
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+                doc.Blocks.Add(header);
+
+                var info = new Table();
+                info.Columns.Add(new TableColumn { Width = new GridLength(180) });
+                info.Columns.Add(new TableColumn());
+                info.RowGroups.Add(new TableRowGroup());
+                void AddRow(string label, string value)
+                {
+                    var row = new TableRow();
+                    row.Cells.Add(new TableCell(new Paragraph(new Run(label)) { FontWeight = FontWeights.Bold }));
+                    row.Cells.Add(new TableCell(new Paragraph(new Run(value))));
+                    info.RowGroups[0].Rows.Add(row);
+                }
+                AddRow("Date", DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
+                AddRow("Method", _lastMethod);
+                AddRow("Plateau (mm)", $"X {_lastPlateauX:F2}, Y {_lastPlateauY:F2}");
+                AddRow("FWHM X (mm)", $"{_lastFwhmX:F3} ± {_lastStdX:F4}");
+                AddRow("FWHM Y (mm)", $"{_lastFwhmY:F3} ± {_lastStdY:F4}");
+                AddRow("Coverage (mm²)", $"{_lastCoverage:F2}");
+                doc.Blocks.Add(info);
+
+                // Plots
+                AddImage(doc, "X Profile", CapturePlot(XPlot));
+                AddImage(doc, "Y Profile", CapturePlot(YPlot));
+
+                var pd = new PrintDialog();
+                if (pd.ShowDialog() == true)
+                {
+                    doc.PageHeight = pd.PrintableAreaHeight;
+                    doc.PageWidth = pd.PrintableAreaWidth;
+                    pd.PrintDocument(((IDocumentPaginatorSource)doc).DocumentPaginator, "Jaw Size Report");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Unable to print jaw report: {ex.Message}", "Print Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+
+        private static void AddImage(FlowDocument doc, string title, BitmapSource bmp)
+        {
+            doc.Blocks.Add(new Paragraph(new Run(title)) { FontSize = 16, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 14, 0, 6) });
+            var img = new System.Windows.Controls.Image
+            {
+                Source = bmp,
+                Width = 700,
+                Stretch = Stretch.Uniform
+            };
+            doc.Blocks.Add(new BlockUIContainer(img) { Margin = new Thickness(0, 0, 0, 10) });
+        }
+
+        private static BitmapSource CapturePlot(WpfPlot plot)
+        {
+            plot.Refresh();
+            var rtb = new RenderTargetBitmap((int)plot.ActualWidth, (int)plot.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(plot);
+            rtb.Freeze();
+            return rtb;
         }
     }
 }

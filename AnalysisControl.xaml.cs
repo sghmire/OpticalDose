@@ -20,6 +20,7 @@ namespace FilmAnalysis
         private double _filmDpiX, _filmDpiY;
         private double _planDpiX, _planDpiY;
         private double[,] _gammaMap;
+        private double _lastPassRate = double.NaN;
         
         // Physical Reference (DICOM center/Isocenter)
         private double _planRefX, _planRefY, _planRefZ;
@@ -533,6 +534,7 @@ namespace FilmAnalysis
             GammaEmptyMsg.Visibility = Visibility.Collapsed;
 
             double passRate = (double)passPoints / totalPoints * 100.0;
+            _lastPassRate = passRate;
             PassRateText.Text = $"{passRate:F1} %";
             PassRateText.Foreground = passRate >= 90 ? Brushes.Lime : Brushes.Red;
             PassRateStatus.Text = passRate >= 90 ? "PASS (Criteria: 90%)" : "FAIL (Criteria: 90%)";
@@ -883,5 +885,74 @@ namespace FilmAnalysis
             RefreshImages();
             UpdateProfiles();
         }
+
+        // ===== Reporting Helpers =====
+
+        public ReportSnapshot GetReportSnapshot()
+        {
+            if (_filmDose == null || _planDose == null || _gammaMap == null || double.IsNaN(_lastPassRate))
+                throw new InvalidOperationException("Load film & plan doses and run gamma analysis before printing.");
+
+            // Ensure layout is up to date before rendering visuals
+            UpdateLayout();
+
+            return new ReportSnapshot
+            {
+                FilmFileName = _filmFileName,
+                PlanFileName = _dicomFileName,
+                PassRate = _lastPassRate,
+                DtaMm = GammaDtaInput.Value ?? 0,
+                DdPercent = GammaDdInput.Value ?? 0,
+                ThresholdPercent = GammaThresholdInput.Value ?? 0,
+                Fractions = FractionsInput.Value ?? 1,
+                Mode = GammaModeCombo.SelectedIndex == 0 ? "Global" : "Local",
+                ShiftX = XShiftInput.Value ?? 0,
+                ShiftY = YShiftInput.Value ?? 0,
+                FilmImage = CaptureElement(MeasuredCanvas),
+                PlanImage = CaptureElement(PlannedCanvas),
+                GammaImage = CaptureElement(GammaImage),
+                ProfileImage = CaptureElement(ProfilePlot)
+            };
+        }
+
+        private static BitmapSource CaptureElement(FrameworkElement element, double scale = 1.0)
+        {
+            element.UpdateLayout();
+            var bounds = VisualTreeHelper.GetDescendantBounds(element);
+            if (bounds.IsEmpty || bounds.Width < 1 || bounds.Height < 1)
+                throw new InvalidOperationException($"Element '{element.Name}' has no renderable size.");
+
+            int pixelWidth = (int)Math.Ceiling(bounds.Width * scale);
+            int pixelHeight = (int)Math.Ceiling(bounds.Height * scale);
+
+            var rtb = new RenderTargetBitmap(pixelWidth, pixelHeight, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                var vb = new VisualBrush(element);
+                dc.DrawRectangle(vb, null, new Rect(new Point(), bounds.Size));
+            }
+            rtb.Render(dv);
+            rtb.Freeze();
+            return rtb;
+        }
+    }
+
+    public class ReportSnapshot
+    {
+        public string FilmFileName { get; set; } = "Film";
+        public string PlanFileName { get; set; } = "Plan";
+        public double PassRate { get; set; }
+        public double DtaMm { get; set; }
+        public double DdPercent { get; set; }
+        public double ThresholdPercent { get; set; }
+        public double Fractions { get; set; }
+        public string Mode { get; set; } = "Global";
+        public double ShiftX { get; set; }
+        public double ShiftY { get; set; }
+        public BitmapSource FilmImage { get; set; }
+        public BitmapSource PlanImage { get; set; }
+        public BitmapSource GammaImage { get; set; }
+        public BitmapSource ProfileImage { get; set; }
     }
 }

@@ -158,6 +158,7 @@ namespace FilmAnalysis
         {
             // Gaussian Elimination with partial pivoting
             int n = b.Length;
+            const double pivotEps = 1e-12;
             for (int i = 0; i < n; i++)
             {
                 int pivot = i;
@@ -169,6 +170,10 @@ namespace FilmAnalysis
                     double tmp = M[i, k]; M[i, k] = M[pivot, k]; M[pivot, k] = tmp;
                 }
                 double tmpB = b[i]; b[i] = b[pivot]; b[pivot] = tmpB;
+
+                // Guard against singular/near-singular matrices
+                if (Math.Abs(M[i, i]) < pivotEps)
+                    throw new InvalidOperationException("Matrix is singular or ill-conditioned; cannot solve reliably.");
 
                 for (int j = i + 1; j < n; j++)
                 {

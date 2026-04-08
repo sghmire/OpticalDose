@@ -360,8 +360,9 @@ namespace FilmAnalysis
             byte[] pixels = GenerateHeatmapPixels(_doseVolume, -1, _currentY, -1, max);
 
             // Correct Aspect Ratio: Z spacing might be different from X spacing
-            double zSpacing = Math.Abs(_zPositions![1] - _zPositions![0]);
-            double scaleZ = zSpacing / _pixelSpacingX;
+            double zSpacing = _zPositions!.Length > 1
+                ? Math.Abs(_zPositions[1] - _zPositions[0])
+                : _pixelSpacingX; // fallback for single-slice volumes
 
             var bitmap = BitmapSource.Create(cols, frames, 96, 96, PixelFormats.Bgra32, null, pixels, cols * 4);
             CoronalImage.Source = bitmap;
@@ -378,8 +379,9 @@ namespace FilmAnalysis
             byte[] pixels = GenerateHeatmapPixels(_doseVolume, -1, -1, _currentX, max);
 
             // Correct Aspect Ratio: Z spacing vs Y spacing
-            double zSpacing = Math.Abs(_zPositions![1] - _zPositions![0]);
-            double scaleZ = zSpacing / _pixelSpacingY;
+            double zSpacing = _zPositions!.Length > 1
+                ? Math.Abs(_zPositions[1] - _zPositions[0])
+                : _pixelSpacingY; // fallback for single-slice volumes
 
             var bitmap = BitmapSource.Create(rows, frames, 96, 96, PixelFormats.Bgra32, null, pixels, rows * 4);
             SagittalImage.Source = bitmap;

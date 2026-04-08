@@ -19,63 +19,11 @@ using System.Linq;
 using BitMiracle.LibTiff.Classic;
 using System.Runtime.InteropServices;
 using System.Globalization;
+using System.Windows.Documents;
+using System.Printing;
 
 namespace FilmAnalysis
 {
-    public class RelayCommand : ICommand
-    {
-        private readonly Action _execute;
-        private readonly Func<bool>? _canExecute;
-        public RelayCommand(Action execute, Func<bool>? canExecute = null)
-        {
-            _execute = execute ?? throw new ArgumentNullException(nameof(execute));
-            _canExecute = canExecute;
-        }
-        public event EventHandler? CanExecuteChanged { add { } remove { } }
-        public bool CanExecute(object? parameter) => _canExecute == null || _canExecute();
-        public void Execute(object? parameter) => _execute();
-    }
-
-    public class FilmRelayCommand : ICommand
-    {
-        private readonly Action? _execute;
-        private readonly Action<object?>? _executeWithParam;
-        public FilmRelayCommand(Action execute) { _execute = execute; }
-        public FilmRelayCommand(Action<object?> executeWithParam) { _executeWithParam = executeWithParam; }
-        public event EventHandler? CanExecuteChanged { add { } remove { } }
-        public bool CanExecute(object? parameter) => true;
-        public void Execute(object? parameter)
-        {
-            if (_execute != null) _execute();
-            else _executeWithParam?.Invoke(parameter);
-        }
-    }
-
-    public class AppSettings
-    {
-        public int FixedWidth { get; set; } = 100;
-        public int FixedHeight { get; set; } = 100;
-        public bool LastWasFixed { get; set; } = false;
-        public string CalibrationsPath { get; set; } = string.Empty;
-        public double LastPlateauX { get; set; } = 20;
-        public double LastPlateauY { get; set; } = 20;
-        public string LastJawMethod { get; set; } = "Maximum";
-
-        // Advanced Gamma Engine Settings
-        public double GammaUncertainty { get; set; } = 2.0;
-        public double GammaSearchStep { get; set; } = 0.1;
-        public double GammaSmoothingSigma { get; set; } = 0.0;
-        public bool GammaUseBicubic { get; set; } = true;
-    }
-
-    public class CalibrationPoint
-    {
-        public double Dose { get; set; }
-        public double Red { get; set; }
-        public double Green { get; set; }
-        public double Blue { get; set; }
-    }
-
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -139,15 +87,6 @@ namespace FilmAnalysis
         private string _activeDicomFileName = "None";
 
         // Undo/Redo History
-        private class ImageState
-        {
-            public double[,] Red, Green, Blue;
-            public double[,] DoseMap;
-            public int Width, Height;
-            public double DpiX, DpiY;
-            public bool ShowingDose;
-            public string Description;
-        }
         private readonly Stack<ImageState> _undoStack = new();
         private readonly Stack<ImageState> _redoStack = new();
 
@@ -261,6 +200,97 @@ namespace FilmAnalysis
         private void Minimize_Click(object sender, RoutedEventArgs e)
         {
             this.WindowState = WindowState.Minimized;
+        }
+
+        private void PrintReport_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var snapshot = AnalysisComp.GetReportSnapshot();
+                
+                // Build FlowDocument similar to fn_PDFPrinter layout
+                var doc = new FlowDocument
+                {
+                    PagePadding = new Thickness(40),
+                    ColumnWidth = double.PositiveInfinity,
+                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
+                };
+
+                doc.Blocks.Add(new Paragraph(new Run("Film Dosimetry Report"))
+                {
+                    FontSize = 24,
+                    FontWeight = FontWeights.Bold,
+                    TextAlignment = TextAlignment.Center,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(173, 216, 230)),
+                    Padding = new Thickness(6)
+                });
+
+                var infoTable = new Table();
+                infoTable.Columns.Add(new TableColumn { Width = new GridLength(150) });
+                infoTable.Columns.Add(new TableColumn());
+                infoTable.RowGroups.Add(new TableRowGroup());
+                void AddInfo(string label, string value)
+                {
+                    var row = new TableRow();
+                    row.Cells.Add(new TableCell(new Paragraph(new Run(label)) { FontWeight = FontWeights.Bold }));
+                    row.Cells.Add(new TableCell(new Paragraph(new Run(value))));
+                    infoTable.RowGroups[0].Rows.Add(row);
+                }
+                AddInfo("Date", DateTime.Now.ToString("yyyy-MM-dd"));
+                AddInfo("Film", snapshot.FilmFileName);
+                AddInfo("Plan", snapshot.PlanFileName);
+                AddInfo("Pass Rate", $"{snapshot.PassRate:F1} %");
+                AddInfo("Gamma", $"{snapshot.DdPercent:F1}% / {snapshot.DtaMm:F1} mm ({snapshot.Mode}, Thresh {snapshot.ThresholdPercent:F1}%, Fx {snapshot.Fractions:F1})");
+                AddInfo("Shifts (mm)", $"X {snapshot.ShiftX:F2}, Y {snapshot.ShiftY:F2}");
+                doc.Blocks.Add(infoTable);
+
+                // Helper to add image block
+                void AddImage(string title, BitmapSource src, double maxWidth)
+                {
+                    var p = new Paragraph(new Run(title)) { FontSize = 16, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 16, 0, 6) };
+                    doc.Blocks.Add(p);
+                    var img = new System.Windows.Controls.Image
+                    {
+                        Source = src,
+                        Stretch = System.Windows.Media.Stretch.Uniform,
+                        Width = maxWidth
+                    };
+                    doc.Blocks.Add(new BlockUIContainer(img) { Margin = new Thickness(0, 0, 0, 10) });
+                }
+
+                AddImage("2D Plan vs Film", CombineSideBySide(snapshot.PlanImage, snapshot.FilmImage), 700);
+                AddImage("Center Profiles", snapshot.ProfileImage, 700);
+                AddImage("Gamma Map", snapshot.GammaImage, 700);
+
+                var pd = new PrintDialog();
+                if (pd.ShowDialog() == true)
+                {
+                    doc.PageHeight = pd.PrintableAreaHeight;
+                    doc.PageWidth = pd.PrintableAreaWidth;
+                    pd.PrintDocument(((IDocumentPaginatorSource)doc).DocumentPaginator, "Film Dosimetry Report");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Unable to print report: {ex.Message}", "Print Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+
+        private static BitmapSource CombineSideBySide(BitmapSource left, BitmapSource right)
+        {
+            int height = Math.Max(left.PixelHeight, right.PixelHeight);
+
+            int width = left.PixelWidth + right.PixelWidth;
+            var drawing = new DrawingVisual();
+            using (var dc = drawing.RenderOpen())
+            {
+                dc.DrawImage(left, new Rect(0, 0, left.PixelWidth, height));
+                dc.DrawImage(right, new Rect(left.PixelWidth, 0, right.PixelWidth, height));
+            }
+            var rtb = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(drawing);
+            rtb.Freeze();
+            return rtb;
         }
 
         private void Maximize_Click(object sender, RoutedEventArgs e)
@@ -704,20 +734,14 @@ namespace FilmAnalysis
 
         #region Undo / Redo
 
-        private static double[,] CloneArray(double[,] src)
-        {
-            if (src == null) return null;
-            return (double[,])src.Clone();
-        }
-
         private void PushUndo(string description)
         {
             _undoStack.Push(new ImageState
             {
-                Red = CloneArray(_redChannel),
-                Green = CloneArray(_greenChannel),
-                Blue = CloneArray(_blueChannel),
-                DoseMap = CloneArray(_doseMap),
+                Red = ImageTransforms.CloneArray(_redChannel),
+                Green = ImageTransforms.CloneArray(_greenChannel),
+                Blue = ImageTransforms.CloneArray(_blueChannel),
+                DoseMap = ImageTransforms.CloneArray(_doseMap),
                 Width = _imgWidth,
                 Height = _imgHeight,
                 DpiX = _dpiX,
@@ -736,10 +760,10 @@ namespace FilmAnalysis
             // Save current state to redo stack
             _redoStack.Push(new ImageState
             {
-                Red = CloneArray(_redChannel),
-                Green = CloneArray(_greenChannel),
-                Blue = CloneArray(_blueChannel),
-                DoseMap = CloneArray(_doseMap),
+                Red = ImageTransforms.CloneArray(_redChannel),
+                Green = ImageTransforms.CloneArray(_greenChannel),
+                Blue = ImageTransforms.CloneArray(_blueChannel),
+                DoseMap = ImageTransforms.CloneArray(_doseMap),
                 Width = _imgWidth,
                 Height = _imgHeight,
                 DpiX = _dpiX,
@@ -761,10 +785,10 @@ namespace FilmAnalysis
             // Save current state to undo stack
             _undoStack.Push(new ImageState
             {
-                Red = CloneArray(_redChannel),
-                Green = CloneArray(_greenChannel),
-                Blue = CloneArray(_blueChannel),
-                DoseMap = CloneArray(_doseMap),
+                Red = ImageTransforms.CloneArray(_redChannel),
+                Green = ImageTransforms.CloneArray(_greenChannel),
+                Blue = ImageTransforms.CloneArray(_blueChannel),
+                DoseMap = ImageTransforms.CloneArray(_doseMap),
                 Width = _imgWidth,
                 Height = _imgHeight,
                 DpiX = _dpiX,
@@ -1448,20 +1472,6 @@ namespace FilmAnalysis
             }
         }
 
-        private static double[,] Rotate2D(double[,] src, int oldH, int oldW, bool isCW)
-        {
-            var dst = new double[oldW, oldH];
-            for (int row = 0; row < oldH; row++)
-                for (int col = 0; col < oldW; col++)
-                {
-                    int nr, nc;
-                    if (isCW) { nr = col; nc = oldH - 1 - row; }
-                    else { nr = oldW - 1 - col; nc = row; }
-                    dst[nr, nc] = src[row, col];
-                }
-            return dst;
-        }
-
         private void Rotation_Click(object sender, RoutedEventArgs e)
         {
             if (_redChannel == null && _doseMap == null) { System.Windows.MessageBox.Show("Please load an image or dose map first.", "No Data"); return; }
@@ -1472,36 +1482,16 @@ namespace FilmAnalysis
             int oldH = _imgHeight, oldW = _imgWidth;
             if (_redChannel != null)
             {
-                _redChannel = Rotate2D(_redChannel, oldH, oldW, isCW);
-                _greenChannel = Rotate2D(_greenChannel, oldH, oldW, isCW);
-                _blueChannel = Rotate2D(_blueChannel, oldH, oldW, isCW);
+                _redChannel = ImageTransforms.Rotate2D(_redChannel, oldH, oldW, isCW);
+                _greenChannel = ImageTransforms.Rotate2D(_greenChannel, oldH, oldW, isCW);
+                _blueChannel = ImageTransforms.Rotate2D(_blueChannel, oldH, oldW, isCW);
             }
-            if (_doseMap != null) _doseMap = Rotate2D(_doseMap, oldH, oldW, isCW);
+            if (_doseMap != null) _doseMap = ImageTransforms.Rotate2D(_doseMap, oldH, oldW, isCW);
 
             _imgWidth = oldH; _imgHeight = oldW;
             UpdateCropUI();
             RefreshDisplay();
             StatusText.Text = isCW ? "Rotated CW 90°" : "Rotated CCW 90°";
-        }
-
-        private static void FlipH(double[,] data, int h, int w)
-        {
-            for (int row = 0; row < h; row++)
-                for (int col = 0; col < w / 2; col++)
-                {
-                    int m = w - 1 - col;
-                    (data[row, col], data[row, m]) = (data[row, m], data[row, col]);
-                }
-        }
-
-        private static void FlipV(double[,] data, int h, int w)
-        {
-            for (int row = 0; row < h / 2; row++)
-            {
-                int m = h - 1 - row;
-                for (int col = 0; col < w; col++)
-                    (data[row, col], data[m, col]) = (data[m, col], data[row, col]);
-            }
         }
 
         private void Flip_Click(object sender, RoutedEventArgs e)
@@ -1512,7 +1502,7 @@ namespace FilmAnalysis
             PushUndo(isHorizontal ? "Flip H" : "Flip V");
 
             int h = _imgHeight, w = _imgWidth;
-            Action<double[,], int, int> flipFn = isHorizontal ? FlipH : FlipV;
+            Action<double[,], int, int> flipFn = isHorizontal ? ImageTransforms.FlipH : ImageTransforms.FlipV;
             if (_redChannel != null)
             {
                 flipFn(_redChannel, h, w);
@@ -1565,25 +1555,16 @@ namespace FilmAnalysis
             }
         }
 
-        private static double[,] CropArray(double[,] src, int x, int y, int w, int h)
-        {
-            var dst = new double[h, w];
-            for (int row = 0; row < h; row++)
-                for (int col = 0; col < w; col++)
-                    dst[row, col] = src[y + row, x + col];
-            return dst;
-        }
-
         private void ApplyCrop(int x, int y, int w, int h)
         {
             x = Math.Max(0, x); y = Math.Max(0, y);
             w = Math.Min(w, _imgWidth - x); h = Math.Min(h, _imgHeight - y);
             if (w <= 0 || h <= 0) return;
 
-            if (_redChannel != null) _redChannel = CropArray(_redChannel, x, y, w, h);
-            if (_greenChannel != null) _greenChannel = CropArray(_greenChannel, x, y, w, h);
-            if (_blueChannel != null) _blueChannel = CropArray(_blueChannel, x, y, w, h);
-            if (_doseMap != null) _doseMap = CropArray(_doseMap, x, y, w, h);
+            if (_redChannel != null) _redChannel = ImageTransforms.CropArray(_redChannel, x, y, w, h);
+            if (_greenChannel != null) _greenChannel = ImageTransforms.CropArray(_greenChannel, x, y, w, h);
+            if (_blueChannel != null) _blueChannel = ImageTransforms.CropArray(_blueChannel, x, y, w, h);
+            if (_doseMap != null) _doseMap = ImageTransforms.CropArray(_doseMap, x, y, w, h);
 
             _imgWidth = w; _imgHeight = h;
             UpdateCropUI();
@@ -1614,13 +1595,13 @@ namespace FilmAnalysis
                 {
                     if (doseMode)
                     {
-                        _doseMap = MedianFilter2D(_doseMap, kernelSize);
+                        _doseMap = ImageFilters.MedianFilter2D(_doseMap, kernelSize);
                     }
                     else
                     {
-                        _redChannel = MedianFilter2D(_redChannel, kernelSize);
-                        _greenChannel = MedianFilter2D(_greenChannel, kernelSize);
-                        _blueChannel = MedianFilter2D(_blueChannel, kernelSize);
+                        _redChannel = ImageFilters.MedianFilter2D(_redChannel, kernelSize);
+                        _greenChannel = ImageFilters.MedianFilter2D(_greenChannel, kernelSize);
+                        _blueChannel = ImageFilters.MedianFilter2D(_blueChannel, kernelSize);
                     }
                 });
 
@@ -1647,13 +1628,13 @@ namespace FilmAnalysis
                 {
                     if (doseMode)
                     {
-                        ApplyNoiseFilter(_doseMap, threshold);
+                        ImageFilters.ApplyNoiseFilter(_doseMap, threshold);
                     }
                     else
                     {
-                        ApplyNoiseFilter(_redChannel, threshold);
-                        ApplyNoiseFilter(_greenChannel, threshold);
-                        ApplyNoiseFilter(_blueChannel, threshold);
+                        ImageFilters.ApplyNoiseFilter(_redChannel, threshold);
+                        ImageFilters.ApplyNoiseFilter(_greenChannel, threshold);
+                        ImageFilters.ApplyNoiseFilter(_blueChannel, threshold);
                     }
                 });
 
@@ -1676,29 +1657,29 @@ namespace FilmAnalysis
                 {
                     if (doseMode)
                     {
-                        if (method == "Average") _doseMap = BoxFilter2D(_doseMap, window);
-                        else if (method == "Median") _doseMap = MedianFilter2D(_doseMap, window);
-                        else if (method == "Gaussian") _doseMap = GaussianFilter2D(_doseMap, strength);
+                        if (method == "Average") _doseMap = ImageFilters.BoxFilter2D(_doseMap, window);
+                        else if (method == "Median") _doseMap = ImageFilters.MedianFilter2D(_doseMap, window);
+                        else if (method == "Gaussian") _doseMap = ImageFilters.GaussianFilter2D(_doseMap, strength);
                     }
                     else
                     {
                         if (method == "Average")
                         {
-                            _redChannel = BoxFilter2D(_redChannel, window);
-                            _greenChannel = BoxFilter2D(_greenChannel, window);
-                            _blueChannel = BoxFilter2D(_blueChannel, window);
+                            _redChannel = ImageFilters.BoxFilter2D(_redChannel, window);
+                            _greenChannel = ImageFilters.BoxFilter2D(_greenChannel, window);
+                            _blueChannel = ImageFilters.BoxFilter2D(_blueChannel, window);
                         }
                         else if (method == "Median")
                         {
-                            _redChannel = MedianFilter2D(_redChannel, window);
-                            _greenChannel = MedianFilter2D(_greenChannel, window);
-                            _blueChannel = MedianFilter2D(_blueChannel, window);
+                            _redChannel = ImageFilters.MedianFilter2D(_redChannel, window);
+                            _greenChannel = ImageFilters.MedianFilter2D(_greenChannel, window);
+                            _blueChannel = ImageFilters.MedianFilter2D(_blueChannel, window);
                         }
                         else if (method == "Gaussian")
                         {
-                            _redChannel = GaussianFilter2D(_redChannel, strength);
-                            _greenChannel = GaussianFilter2D(_greenChannel, strength);
-                            _blueChannel = GaussianFilter2D(_blueChannel, strength);
+                            _redChannel = ImageFilters.GaussianFilter2D(_redChannel, strength);
+                            _greenChannel = ImageFilters.GaussianFilter2D(_greenChannel, strength);
+                            _blueChannel = ImageFilters.GaussianFilter2D(_blueChannel, strength);
                         }
                     }
                 });
@@ -1726,13 +1707,13 @@ namespace FilmAnalysis
                 {
                     if (doseMode)
                     {
-                        _doseMap = Interpolate2D(_doseMap, newW, newH, method);
+                        _doseMap = ImageFilters.Interpolate2D(_doseMap, newW, newH, method);
                     }
                     else
                     {
-                        _redChannel = Interpolate2D(_redChannel, newW, newH, method);
-                        _greenChannel = Interpolate2D(_greenChannel, newW, newH, method);
-                        _blueChannel = Interpolate2D(_blueChannel, newW, newH, method);
+                        _redChannel = ImageFilters.Interpolate2D(_redChannel, newW, newH, method);
+                        _greenChannel = ImageFilters.Interpolate2D(_greenChannel, newW, newH, method);
+                        _blueChannel = ImageFilters.Interpolate2D(_blueChannel, newW, newH, method);
                     }
                 });
 
@@ -1747,207 +1728,6 @@ namespace FilmAnalysis
                 StatusText.Text = $"Interpolated to {newW}x{newH} ({method})";
                 StatusIndicator.Background = new SolidColorBrush(Colors.Green);
             }
-        }
-
-        // --- Median Filter (medfilt2 equivalent) ---
-        private static double[,] MedianFilter2D(double[,] input, int kernelSize)
-        {
-            int h = input.GetLength(0), w = input.GetLength(1);
-            var output = new double[h, w];
-            int half = kernelSize / 2;
-            var buffer = new double[kernelSize * kernelSize];
-
-            for (int row = 0; row < h; row++)
-            {
-                for (int col = 0; col < w; col++)
-                {
-                    int count = 0;
-                    for (int ky = -half; ky <= half; ky++)
-                    {
-                        int ry = Math.Clamp(row + ky, 0, h - 1);
-                        for (int kx = -half; kx <= half; kx++)
-                        {
-                            int cx = Math.Clamp(col + kx, 0, w - 1);
-                            buffer[count++] = input[ry, cx];
-                        }
-                    }
-                    Array.Sort(buffer, 0, count);
-                    output[row, col] = buffer[count / 2];
-                }
-            }
-            return output;
-        }
-
-        // --- Box/Average Filter (smoothdata2 movmean equivalent) ---
-        private static double[,] BoxFilter2D(double[,] input, int kernelSize)
-        {
-            int h = input.GetLength(0), w = input.GetLength(1);
-            var output = new double[h, w];
-            int half = kernelSize / 2;
-
-            for (int row = 0; row < h; row++)
-            {
-                for (int col = 0; col < w; col++)
-                {
-                    double sum = 0; int count = 0;
-                    for (int ky = -half; ky <= half; ky++)
-                    {
-                        int ry = Math.Clamp(row + ky, 0, h - 1);
-                        for (int kx = -half; kx <= half; kx++)
-                        {
-                            int cx = Math.Clamp(col + kx, 0, w - 1);
-                            sum += input[ry, cx];
-                            count++;
-                        }
-                    }
-                    output[row, col] = sum / count;
-                }
-            }
-            return output;
-        }
-
-        // --- Gaussian Filter (imgaussfilt equivalent) ---
-        private static double[,] GaussianFilter2D(double[,] input, double sigma)
-        {
-            int kernelRadius = (int)Math.Ceiling(sigma * 3);
-            int kernelSize = kernelRadius * 2 + 1;
-
-            // Build Gaussian kernel
-            double[] kernel1D = new double[kernelSize];
-            double kernelSum = 0;
-            for (int i = 0; i < kernelSize; i++)
-            {
-                double x = i - kernelRadius;
-                kernel1D[i] = Math.Exp(-(x * x) / (2 * sigma * sigma));
-                kernelSum += kernel1D[i];
-            }
-            for (int i = 0; i < kernelSize; i++) kernel1D[i] /= kernelSum;
-
-            int h = input.GetLength(0), w = input.GetLength(1);
-
-            // Separable: horizontal pass
-            var temp = new double[h, w];
-            for (int row = 0; row < h; row++)
-            {
-                for (int col = 0; col < w; col++)
-                {
-                    double sum = 0;
-                    for (int k = -kernelRadius; k <= kernelRadius; k++)
-                    {
-                        int cx = Math.Clamp(col + k, 0, w - 1);
-                        sum += input[row, cx] * kernel1D[k + kernelRadius];
-                    }
-                    temp[row, col] = sum;
-                }
-            }
-
-            // Vertical pass
-            var output = new double[h, w];
-            for (int col = 0; col < w; col++)
-            {
-                for (int row = 0; row < h; row++)
-                {
-                    double sum = 0;
-                    for (int k = -kernelRadius; k <= kernelRadius; k++)
-                    {
-                        int ry = Math.Clamp(row + k, 0, h - 1);
-                        sum += temp[ry, col] * kernel1D[k + kernelRadius];
-                    }
-                    output[row, col] = sum;
-                }
-            }
-            return output;
-        }
-
-        // --- Noise Filter (NaN/Inf/threshold removal) ---
-        private static void ApplyNoiseFilter(double[,] data, double threshold)
-        {
-            int h = data.GetLength(0), w = data.GetLength(1);
-            for (int row = 0; row < h; row++)
-            {
-                for (int col = 0; col < w; col++)
-                {
-                    double v = data[row, col];
-                    if (double.IsNaN(v) || double.IsInfinity(v) || Math.Abs(v) > threshold)
-                        data[row, col] = 1;
-                }
-            }
-        }
-
-        // --- 2D Interpolation (interp2 equivalent) ---
-        private static double[,] Interpolate2D(double[,] input, int newW, int newH, string method)
-        {
-            int oldH = input.GetLength(0), oldW = input.GetLength(1);
-            var output = new double[newH, newW];
-
-            Parallel.For(0, newH, newRow =>
-            {
-                for (int newCol = 0; newCol < newW; newCol++)
-                {
-                    // Map output pixel to input coordinates
-                    double srcRow = (double)newRow / (newH - 1) * (oldH - 1);
-                    double srcCol = (double)newCol / (newW - 1) * (oldW - 1);
-
-                    if (method == "Nearest")
-                    {
-                        int r = (int)Math.Round(srcRow);
-                        int c = (int)Math.Round(srcCol);
-                        r = Math.Clamp(r, 0, oldH - 1);
-                        c = Math.Clamp(c, 0, oldW - 1);
-                        output[newRow, newCol] = input[r, c];
-                    }
-                    else if (method == "Linear")
-                    {
-                        output[newRow, newCol] = BilinearSample(input, srcRow, srcCol, oldH, oldW);
-                    }
-                    else // Cubic
-                    {
-                        output[newRow, newCol] = BicubicSample(input, srcRow, srcCol, oldH, oldW);
-                    }
-                }
-            });
-
-            return output;
-        }
-
-        private static double BilinearSample(double[,] data, double row, double col, int h, int w)
-        {
-            int r0 = Math.Clamp((int)row, 0, h - 2);
-            int c0 = Math.Clamp((int)col, 0, w - 2);
-            double fr = row - r0, fc = col - c0;
-            return data[r0, c0] * (1 - fr) * (1 - fc) +
-                   data[r0, c0 + 1] * (1 - fr) * fc +
-                   data[r0 + 1, c0] * fr * (1 - fc) +
-                   data[r0 + 1, c0 + 1] * fr * fc;
-        }
-
-        private static double BicubicSample(double[,] data, double row, double col, int h, int w)
-        {
-            int r0 = (int)Math.Floor(row);
-            int c0 = (int)Math.Floor(col);
-            double fr = row - r0, fc = col - c0;
-
-            double sum = 0;
-            for (int m = -1; m <= 2; m++)
-            {
-                double wr = CubicWeight(fr - m);
-                for (int n = -1; n <= 2; n++)
-                {
-                    double wc = CubicWeight(fc - n);
-                    int ri = Math.Clamp(r0 + m, 0, h - 1);
-                    int ci = Math.Clamp(c0 + n, 0, w - 1);
-                    sum += data[ri, ci] * wr * wc;
-                }
-            }
-            return sum;
-        }
-
-        private static double CubicWeight(double x)
-        {
-            x = Math.Abs(x);
-            if (x <= 1) return 1.5 * x * x * x - 2.5 * x * x + 1;
-            if (x < 2) return -0.5 * x * x * x + 2.5 * x * x - 4 * x + 2;
-            return 0;
         }
 
         // --- ROI Mask Filter (zero everything outside rectangle) ---
@@ -2843,7 +2623,7 @@ namespace FilmAnalysis
                     {
                         for (int x = 0; x < w; x++)
                         {
-                            _doseMap[y, x] = CalculateSinglePixelDose(x, y, mode, config, delta);
+                            _doseMap[y, x] = DoseCalculator.CalculateSinglePixelDose(_redChannel, _greenChannel, _blueChannel, x, y, mode, config, delta);
                         }
                     });
                 });
@@ -3106,55 +2886,6 @@ namespace FilmAnalysis
 
         #endregion
 
-        private double CalculateSinglePixelDose(int x, int y, string mode, CalibrationConfig config, double delta)
-        {
-            try
-            {
-                double rValue = _redChannel != null ? _redChannel[y, x] : 0;
-                double gValue = _greenChannel != null ? _greenChannel[y, x] : 0;
-                double bValue = _blueChannel != null ? _blueChannel[y, x] : 0;
-
-                double rOD = -Math.Log10(Math.Max(rValue, 1) / 65535.0);
-                double gOD = -Math.Log10(Math.Max(gValue, 1) / 65535.0);
-                double bOD = -Math.Log10(Math.Max(bValue, 1) / 65535.0);
-
-                if (mode.Contains("Single") && mode.Contains("Red"))
-                {
-                    return Math.Max(0, FittingMath.PolyVal(config.FirstFit, rOD));
-                }
-                else if (mode.Contains("Single") && mode.Contains("Green"))
-                {
-                    return Math.Max(0, FittingMath.PolyVal(config.FirstFit, gOD));
-                }
-                else if (mode.Contains("Single") && mode.Contains("Blue"))
-                {
-                    return Math.Max(0, FittingMath.PolyVal(config.FirstFit, bOD));
-                }
-                else if (mode.Contains("Dual") && mode.Contains("Red"))
-                {
-                    double ratio = rOD / (bOD + 2.22e-16);
-                    double firstPass = FittingMath.PolyVal(config.FirstFit, ratio);
-                    return Math.Max(0, FittingMath.PolyVal(config.SecondFit, firstPass));
-                }
-                else if (mode.Contains("Dual") && mode.Contains("Green"))
-                {
-                    double ratio = gOD / (bOD + 2.22e-16);
-                    double firstPass = FittingMath.PolyVal(config.FirstFit, ratio);
-                    return Math.Max(0, FittingMath.PolyVal(config.SecondFit, firstPass));
-                }
-                else if (mode.Contains("Triple"))
-                {
-                    double doseR = FittingMath.PolyVal(config.FirstFit, rOD);
-                    double doseG = FittingMath.PolyVal(config.SecondFit, gOD);
-                    double doseB = FittingMath.PolyVal(config.ThirdFit, bOD);
-
-                    return Math.Max(0, ((doseR + doseG + doseB) / 3.0) * delta);
-                }
-            }
-            catch { }
-            return 0;
-        }
-
         private BitmapSource GenerateDoseHeatmap()
         {
             int h = _imgHeight;
@@ -3176,7 +2907,7 @@ namespace FilmAnalysis
                 for (int x = 0; x < w; x++)
                 {
                     double d = _doseMap[y, x];
-                    var (R, G, B) = GetColorFromMap(d / maxDose, mapName);
+                    var (R, G, B) = ColorMaps.GetColorFromMap(d / maxDose, mapName);
                     int idx = y * stride + x * 4;
                     pixels[idx] = B;
                     pixels[idx + 1] = G;
@@ -3186,57 +2917,6 @@ namespace FilmAnalysis
             });
 
             return BitmapSource.Create(w, h, _dpiX, _dpiY, PixelFormats.Bgra32, null, pixels, stride);
-        }
-
-        private (byte R, byte G, byte B) GetColorFromMap(double v, string mapName)
-        {
-            v = Math.Clamp(v, 0, 1);
-            return mapName switch
-            {
-                "Hot" => GetHotColor(v),
-                "Viridis" => GetViridisColor(v),
-                "Gray" => GetGrayColor(v),
-                _ => GetJetColor(v)
-            };
-        }
-
-        private (byte R, byte G, byte B) GetJetColor(double v)
-        {
-            double r = 0, g = 0, b = 0;
-            if (v < 0.25) { r = 0; g = 4 * v; b = 1; }
-            else if (v < 0.5) { r = 0; g = 1; b = 1 + 4 * (0.25 - v); }
-            else if (v < 0.75) { r = 4 * (v - 0.5); g = 1; b = 0; }
-            else { r = 1; g = 1 + 4 * (0.75 - v); b = 0; }
-            return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
-        }
-
-        private (byte R, byte G, byte B) GetHotColor(double v)
-        {
-            double r, g, b;
-            if (v < 0.33) { r = 3 * v; g = 0; b = 0; }
-            else if (v < 0.66) { r = 1; g = 3 * (v - 0.33); b = 0; }
-            else { r = 1; g = 1; b = 3 * (v - 0.66); }
-            return ((byte)(Math.Clamp(r, 0, 1) * 255), (byte)(Math.Clamp(g, 0, 1) * 255), (byte)(Math.Clamp(b, 0, 1) * 255));
-        }
-
-        private (byte R, byte G, byte B) GetGrayColor(double v)
-        {
-            byte val = (byte)(v * 255);
-            return (val, val, val);
-        }
-
-        private (byte R, byte G, byte B) GetViridisColor(double v)
-        {
-            // Simple 3-point approximation: Purple -> Green -> Yellow
-            double r, g, b;
-            if (v < 0.5) {
-                double t = v * 2;
-                r = 0.26 + 0.1 * t; g = 0.0 + 0.6 * t; b = 0.33 + 0.1 * t;
-            } else {
-                double t = (v - 0.5) * 2;
-                r = 0.36 + 0.6 * t; g = 0.6 + 0.3 * t; b = 0.43 - 0.3 * t;
-            }
-            return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
         }
 
         private void ContrastSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

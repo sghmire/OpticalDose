@@ -99,6 +99,7 @@
                             <MenuItem Header="_Export">
                                 <MenuItem Header="Dose Map (*.txt)" Click="ExportDoseMap_Click" />
                             </MenuItem>
+                            <MenuItem Header="_Print Report..." Click="PrintReport_Click" />
                             <Separator />
                             <MenuItem Header="_Settings..." Click="Settings_Click" />
                             <Separator />
