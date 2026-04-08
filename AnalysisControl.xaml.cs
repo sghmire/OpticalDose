@@ -329,6 +329,39 @@ namespace FilmQA
             int winX = (int)Math.Ceiling(dta_mm / planSpacingX) + 1;
             int winY = (int)Math.Ceiling(dta_mm / planSpacingY) + 1;
 
+            // PRE-SAMPLING PLAN GRID: Up-sample plan dose to avoid repeated interpolation
+            bool doPreSample = (step >= 0.05); // Cap upsampling to avoid OOM
+            double[,] upsampledPlan = null!;
+            int U = 1;
+            if (doPreSample)
+            {
+                U = (int)Math.Round(1.0 / step);
+                int upPh = (ph - 1) * U + 1;
+                int upPw = (pw - 1) * U + 1;
+                upsampledPlan = new double[upPh, upPw];
+                Parallel.For(0, upPh, y =>
+                {
+                    double py = Math.Clamp((double)y / U, 0, ph - 1);
+                    for (int x = 0; x < upPw; x++)
+                    {
+                        double px = Math.Clamp((double)x / U, 0, pw - 1);
+                        upsampledPlan[y, x] = useBicubic ? GetBicubicPlanDose(px, py) : GetBilinearPlanDose(px, py);
+                    }
+                });
+            }
+
+            // PRE-CALCULATE RADIAL SPIRAL OFFSETS
+            var offsets = new List<(double dx, double dy, double dSq)>();
+            for (double dy = -winY; dy <= winY; dy += step)
+            {
+                for (double dx = -winX; dx <= winX; dx += step)
+                {
+                    double dSq = (dx * planSpacingX) * (dx * planSpacingX) + (dy * planSpacingY) * (dy * planSpacingY);
+                    offsets.Add((dx, dy, dSq));
+                }
+            }
+            offsets.Sort((a, b) => a.dSq.CompareTo(b.dSq));
+
             int completedRows = 0;
             Parallel.For(0, fh, fy =>
             {
@@ -361,48 +394,55 @@ namespace FilmQA
 
                     double minGammaSq = double.MaxValue;
 
-                    // double step = 0.1; // Sub-pixel tracking — Now dynamic from settings
-                    double startPy = Math.Max(0, npy - winY);
-                    double endPy = Math.Min(ph - 1, npy + winY);
-                    double startPx = Math.Max(0, npx - winX);
-                    double endPx = Math.Min(pw - 1, npx + winX);
-
-                    for (double py = startPy; py <= endPy; py += step)
+                    foreach (var off in offsets)
                     {
-                        for (double px = startPx; px <= endPx; px += step)
+                        double px = npx + off.dx;
+                        double py = npy + off.dy;
+
+                        if (px < 0 || px > pw - 1 || py < 0 || py > ph - 1) continue;
+
+                        // Distance Component: Calculate physical LPS positions relative to Ref Point
+                        double pmmX = (_planOriginX + px * planSpacingX) - _planRefX;
+                        double pmmY = (_planOriginY + py * planSpacingY * _planSpacingYSign) - _planRefY;
+
+                        double distSq = (fmmX - pmmX) * (fmmX - pmmX) + (fmmY - pmmY) * (fmmY - pmmY);
+                        double gammaDistSq = distSq / (dta_mm * dta_mm);
+
+                        // Early Exit Math: If physical distance alone exceeds minGammaSq mathematically, skip dose lookup!
+                        // Since offsets are radially sorted, `gammaDistSq` inherently bounds future discoveries, vastly accelerating the loop.
+                        if (gammaDistSq >= minGammaSq) continue;
+
+                        double planVal;
+                        if (doPreSample)
                         {
-                            // Distance Component: Calculate physical LPS positions relative to Ref Point
-                            double pmmX = (_planOriginX + px * planSpacingX) - _planRefX;
-                            double pmmY = (_planOriginY + py * planSpacingY * _planSpacingYSign) - _planRefY;
-
-                            double distSq = Math.Pow(fmmX - pmmX, 2) + Math.Pow(fmmY - pmmY, 2);
-                            double gammaDistSq = distSq / Math.Pow(dta_mm, 2);
-
-                            // Early Exit Math: If physical distance alone exceeds minGammaSq mathematically, skip dose lookup!
-                            if (gammaDistSq >= minGammaSq) continue;
-
-                            double planVal = useBicubic ? GetBicubicPlanDose(px, py) : GetBilinearPlanDose(px, py);
-                            
-                            // Scale Plan dose for comparison
-                            double scaledPlanVal = planVal / fractions;
-
-                            // Dose Difference Component
-                            double dDiffPercent;
-                            if (isGlobal)
-                            {
-                                dDiffPercent = (filmVal - scaledPlanVal) / maxPlan * 100.0;
-                            }
-                            else
-                            {
-                                // Local Dose Normalization
-                                double localNorm = scaledPlanVal > 0.001 ? scaledPlanVal : 0.001; 
-                                dDiffPercent = (filmVal - scaledPlanVal) / localNorm * 100.0;
-                            }
-                            
-                            double effectiveDiff = Math.Max(0, Math.Abs(dDiffPercent) - uncertainty_percent);
-                            double gammaSq = Math.Pow(effectiveDiff / dd_percent, 2) + gammaDistSq;
-                            if (gammaSq < minGammaSq) minGammaSq = gammaSq;
+                            int ux = (int)Math.Round(px * U);
+                            int uy = (int)Math.Round(py * U);
+                            planVal = upsampledPlan[uy, ux];
                         }
+                        else
+                        {
+                            planVal = useBicubic ? GetBicubicPlanDose(px, py) : GetBilinearPlanDose(px, py);
+                        }
+                        
+                        // Scale Plan dose for comparison
+                        double scaledPlanVal = planVal / fractions;
+
+                        // Dose Difference Component
+                        double dDiffPercent;
+                        if (isGlobal)
+                        {
+                            dDiffPercent = (filmVal - scaledPlanVal) / maxPlan * 100.0;
+                        }
+                        else
+                        {
+                            // Local Dose Normalization
+                            double localNorm = scaledPlanVal > 0.001 ? scaledPlanVal : 0.001; 
+                            dDiffPercent = (filmVal - scaledPlanVal) / localNorm * 100.0;
+                        }
+                        
+                        double effectiveDiff = Math.Max(0, Math.Abs(dDiffPercent) - uncertainty_percent);
+                        double gammaSq = (effectiveDiff / dd_percent) * (effectiveDiff / dd_percent) + gammaDistSq;
+                        if (gammaSq < minGammaSq) minGammaSq = gammaSq;
                     }
                     gammaMap[fy, fx] = Math.Sqrt(minGammaSq);
                 }

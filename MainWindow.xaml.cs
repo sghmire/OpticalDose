@@ -1494,18 +1494,22 @@ namespace FilmQA
         private async Task PerformManualAlignment(Point L, Point R, Point T, System.Windows.Rect renderedRect)
         {
             // Roll angle from Left-Right markers (MATLAB: atan2(R(2)-L(2), R(1)-L(1)))
-            double angle = Math.Atan2(R.Y - L.Y, R.X - L.X) * (180.0 / Math.PI);
+            double dxLR = R.X - L.X;
+            double dyLR = R.Y - L.Y;
+            double angle = Math.Atan2(dyLR, dxLR) * (180.0 / Math.PI);
 
-            // Isocenter: X from Top marker, Y from L-R line at that X
-            double isoX = T.X;
-            double isoY;
-            if (Math.Abs(R.X - L.X) > 1e-9)
+            // Isocenter: projection of T onto the line L-R
+            double lenSq = dxLR * dxLR + dyLR * dyLR;
+            double isoX, isoY;
+            if (lenSq > 1e-9)
             {
-                double slope = (R.Y - L.Y) / (R.X - L.X);
-                isoY = L.Y + slope * (T.X - L.X);
+                double dot = ((T.X - L.X) * dxLR + (T.Y - L.Y) * dyLR) / lenSq;
+                isoX = L.X + dot * dxLR;
+                isoY = L.Y + dot * dyLR;
             }
             else
             {
+                isoX = T.X;
                 isoY = (L.Y + R.Y) / 2.0;
             }
 
@@ -1520,8 +1524,8 @@ namespace FilmQA
 
             int rows = _imgHeight;
             int cols = _imgWidth;
-            double theta = -angle * Math.PI / 180.0;
-            double cosT = Math.Cos(theta), sinT = Math.Sin(theta);
+            double gamma = -angle * Math.PI / 180.0;
+            double cosG = Math.Cos(gamma), sinG = Math.Sin(gamma);
 
             // Transform corners to find new canvas bounds (MATLAB 1-based coordinates)
             double[,] corners = { { 1, 1 }, { cols, 1 }, { 1, rows }, { cols, rows } };
@@ -1530,8 +1534,8 @@ namespace FilmQA
             {
                 double cx = corners[i, 0] - isoX;
                 double cy = corners[i, 1] - isoY;
-                double tx = cx * cosT + cy * sinT;
-                double ty = -cx * sinT + cy * cosT;
+                double tx = cx * cosG - cy * sinG;
+                double ty = cx * sinG + cy * cosG;
                 maxH = Math.Max(maxH, Math.Abs(tx));
                 maxV = Math.Max(maxV, Math.Abs(ty));
             }
@@ -1545,9 +1549,6 @@ namespace FilmQA
             var newGreen = new double[newH, newW];
             var newBlue = new double[newH, newW];
 
-            // Inverse transform: for each output pixel, find source pixel
-            double cosNeg = Math.Cos(-theta), sinNeg = Math.Sin(-theta);
-
             await Task.Run(() =>
             {
                 Parallel.For(0, newH, outRow =>
@@ -1558,8 +1559,8 @@ namespace FilmQA
                         double dx = (outCol + 1) - newCenterX;
                         double dy = (outRow + 1) - newCenterY;
                         // Undo rotation
-                        double ux = dx * cosNeg + dy * sinNeg;
-                        double uy = -dx * sinNeg + dy * cosNeg;
+                        double ux = dx * cosG + dy * sinG;
+                        double uy = -dx * sinG + dy * cosG;
                         // Undo T1 (back to 1-based source coords)
                         double srcX = ux + isoX;
                         double srcY = uy + isoY;
