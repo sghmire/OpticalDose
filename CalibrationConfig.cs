@@ -1,6 +1,6 @@
 using System;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     public class CalibrationConfig
     {

@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Input;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     public class RelayCommand : ICommand
     {

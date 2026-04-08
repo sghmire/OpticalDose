@@ -1,9 +1,9 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.5.11626.173 insiders
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FilmAnalysis", "FilmAnalysis.csproj", "{CA52E799-E495-839C-65CE-80C1EF1FE75B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FilmQA", "FilmQA.csproj", "{CA52E799-E495-839C-65CE-80C1EF1FE75B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

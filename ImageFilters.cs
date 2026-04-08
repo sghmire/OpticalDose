@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     /// <summary>
     /// Pure static image filtering and interpolation routines.

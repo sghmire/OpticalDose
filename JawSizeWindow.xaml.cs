@@ -12,7 +12,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Documents;
 using System.Printing;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     public partial class JawSizeWindow : FluentWindow
     {

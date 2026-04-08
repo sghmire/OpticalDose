@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     /// <summary>
     /// Represents a single ROI (Region of Interest) from an RT Structure Set.

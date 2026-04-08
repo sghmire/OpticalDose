@@ -22,7 +22,7 @@ using System.Globalization;
 using System.Windows.Documents;
 using System.Printing;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     /// <summary>
     /// Interaction logic for MainWindow.xaml
@@ -433,7 +433,7 @@ namespace FilmAnalysis
 
             stack.Children.Add(new System.Windows.Controls.TextBlock
             {
-                Text = "Film Tools",
+                Text = "Film QA",
                 FontSize = 24,
                 FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -460,7 +460,7 @@ namespace FilmAnalysis
 
             var dialog = new ContentDialog(_dialogService.GetContentPresenter())
             {
-                Title = "About Film Tools",
+                Title = "About Film QA",
                 Content = stack,
                 CloseButtonText = "Close",
                 DefaultButton = ContentDialogButton.Close

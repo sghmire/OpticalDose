@@ -10,7 +10,7 @@ using FellowOakDicom;
 using FellowOakDicom.Imaging;
 using Microsoft.Win32;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     public class DoseExtractedEventArgs : EventArgs
     {

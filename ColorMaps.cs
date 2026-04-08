@@ -1,6 +1,6 @@
 using System;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     /// <summary>
     /// Pure static color map routines for dose heatmap rendering.

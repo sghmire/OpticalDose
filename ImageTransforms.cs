@@ -1,6 +1,6 @@
 using System;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     /// <summary>
     /// Pure static image transformation routines (rotate, flip, crop, clone).

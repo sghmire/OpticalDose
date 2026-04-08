@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace FilmAnalysis
+namespace FilmQA
 {
     public static class FittingMath
     {
