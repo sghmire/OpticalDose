@@ -115,6 +115,7 @@
                         </MenuItem>
                         <MenuItem Header="_Help" Height="45">
                             <MenuItem Header="_About" Click="About_Click" />
+                            <MenuItem Header="_References" Click="References_Click" />
                         </MenuItem>
                     </Menu>
                 </ui:TitleBar.Header>
@@ -205,8 +206,8 @@
                                         <TextBlock Text="Image Enhancement" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                         <Grid Margin="0,0,0,8" Width="310">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="70" />
+                                                <ColumnDefinition Width="85" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Kernel:" VerticalAlignment="Center" Margin="0,0,6,0" Grid.Column="0" />
@@ -215,8 +216,8 @@
                                         </Grid>
                                         <Grid Margin="0,0,0,8" Width="310">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="70" />
+                                                <ColumnDefinition Width="85" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Threshold:" VerticalAlignment="Center" Margin="0,0,6,0" Grid.Column="0" />
@@ -273,7 +274,7 @@
                                         <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" Padding="10,5" CornerRadius="4" Margin="0,0,0,15">
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Dose Range: " VerticalAlignment="Center"/>
-                                                <TextBlock x:Name="DoseRangeText" Text="N/A" FontWeight="Bold" Foreground="{DynamicResource AccentFillColorDefaultBrush}"/>
+                                                <TextBlock x:Name="DoseRangeText" Text="N/A" FontWeight="Bold" Foreground="{StaticResource DosimetryHeaderBrush}"/>
                                             </StackPanel>
                                         </Border>
 
@@ -300,7 +301,7 @@
                         <!-- Image Metadata Panel -->
                         <Border Grid.Row="1" Margin="0,10,0,0" Padding="15" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4">
                             <StackPanel>
-                                <TextBlock Text="Image Information" FontWeight="Bold" Margin="0,0,0,10" Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                                <TextBlock Text="Image Information" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -552,7 +553,19 @@
                                          d:ItemsSource="{d:SampleData ItemCount=5}" 
                                          VerticalAlignment="Stretch"
                                          SelectionMode="Extended"
-                                         SelectionChanged="DataGrid_SelectionChanged">
+                                         SelectionChanged="DataGrid_SelectionChanged"
+                                         GridLinesVisibility="All"
+                                         HorizontalGridLinesBrush="{DynamicResource ControlElevationBorderBrush}"
+                                         VerticalGridLinesBrush="{DynamicResource ControlElevationBorderBrush}"
+                                         BorderThickness="1"
+                                         BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                         AutoGenerateColumns="False">
+                                <ui:DataGrid.Columns>
+                                    <DataGridTextColumn Header="Dose (cGy)" Binding="{Binding Dose, StringFormat={}{0:F2}}" Width="*" />
+                                    <DataGridTextColumn Header="Red" Binding="{Binding Red, StringFormat={}{0:F2}}" Width="*" />
+                                    <DataGridTextColumn Header="Green" Binding="{Binding Green, StringFormat={}{0:F2}}" Width="*" />
+                                    <DataGridTextColumn Header="Blue" Binding="{Binding Blue, StringFormat={}{0:F2}}" Width="*" />
+                                </ui:DataGrid.Columns>
                                 <ui:DataGrid.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="Delete Selected" Click="DeleteSelected_Click" Icon="{ui:SymbolIcon Dismiss24}" />

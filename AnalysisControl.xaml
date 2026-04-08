@@ -27,12 +27,10 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <ui:Button x:Name="SyncFilmButton" Content="Sync Film" Icon="{ui:SymbolIcon ArrowSync24}" HorizontalAlignment="Stretch" Margin="0,0,5,0" Click="SyncFilmButton_Click" />
-                        <ui:Button x:Name="SyncDicomButton" Grid.Column="1" Content="Sync DICOM" Icon="{ui:SymbolIcon CubeSync24}" HorizontalAlignment="Stretch" Click="SyncDicomButton_Click" />
+                        <ui:Button x:Name="SyncFilmButton" Content="Sync Film" Icon="{ui:SymbolIcon ArrowSync24}" HorizontalAlignment="Stretch" Margin="0,0,5,0" Click="SyncFilmButton_Click" Height="38" />
+                        <ui:Button x:Name="SyncDicomButton" Grid.Column="1" Content="Sync DICOM" Icon="{ui:SymbolIcon CubeSync24}" HorizontalAlignment="Stretch" Click="SyncDicomButton_Click" Height="38" />
                     </Grid>
                     
-                    <!-- (Data Source Info moved to Gamma Map overlay) -->
-
                     <!-- ROI Selection -->
                     <TextBlock Text="Region of Interest" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,5" />
                     <Grid Margin="0,0,0,5">
@@ -41,14 +39,27 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <ui:Button x:Name="SelectRoiButton" Content="Select ROI" Icon="{ui:SymbolIcon Crop24}" HorizontalAlignment="Stretch" Grid.Column="0" Margin="0,0,5,0" Click="SelectRoi_Click" IsEnabled="False" />
-                        <ui:Button x:Name="ClearRoiButton" Content="Clear" Appearance="Secondary" Grid.Column="1" Margin="0,0,5,0" Click="ClearRoi_Click" IsEnabled="False" />
-                        <ui:Button x:Name="CropButton" Content="Crop" Appearance="Primary" Grid.Column="2" Click="Crop_Click" IsEnabled="False" />
+                        <ui:Button x:Name="SelectRoiButton" Content="Select ROI" Icon="{ui:SymbolIcon Crop24}" HorizontalAlignment="Stretch" Grid.Column="0" Margin="0,0,5,0" Click="SelectRoi_Click" IsEnabled="False" Height="38" />
+                        <ui:Button x:Name="ClearRoiButton" Content="Clear" Appearance="Secondary" Grid.Column="1" Margin="0,0,5,0" Click="ClearRoi_Click" IsEnabled="False" Height="38" />
+                        <ui:Button x:Name="CropButton" Content="Crop" Appearance="Primary" Grid.Column="2" Click="Crop_Click" IsEnabled="False" Height="38" />
                     </Grid>
-                    <TextBlock x:Name="RoiStatusText" Text="No ROI selected" FontSize="9" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,15" />
+
+                    <!-- Profile Sampling -->
+                    <TextBlock Text="Profile Sampling" Style="{StaticResource DosimetrySectionHeader}" Margin="0,15,0,8" />
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.2*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ui:Button x:Name="PickProfileButton" Content="Pick Point" Icon="{ui:SymbolIcon TargetArrow24}" Appearance="Secondary" Click="PickProfilePoint_Click" HorizontalAlignment="Stretch" Margin="0,0,5,0" Height="38" />
+                        <ComboBox x:Name="ProfileAxisCombo" Grid.Column="1" HorizontalAlignment="Stretch" Height="38" FontSize="11" SelectionChanged="ProfileAxisCombo_SelectionChanged">
+                            <ComboBoxItem Content="X Profile" IsSelected="True" />
+                            <ComboBoxItem Content="Y Profile" />
+                        </ComboBox>
+                    </Grid>
 
                     <!-- Alignment -->
-                    <TextBlock Text="Spatial Alignment (mm)" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
+                    <TextBlock Text="Spatial Alignment (mm)" Style="{StaticResource DosimetrySectionHeader}" Margin="0,20,0,10" />
                     <Grid Margin="0,0,0,15">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -56,22 +67,18 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Margin="0,0,5,0">
                             <TextBlock Text="X Shift" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                            <ui:NumberBox x:Name="XShiftInput" Value="0" SmallChange="0.1" ValueChanged="Alignment_Changed" />
+                            <ui:NumberBox x:Name="XShiftInput" Value="0" SmallChange="0.1" ValueChanged="Alignment_Changed" Height="38" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Margin="5,0,0,0">
                             <TextBlock Text="Y Shift" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                            <ui:NumberBox x:Name="YShiftInput" Value="0" SmallChange="0.1" ValueChanged="Alignment_Changed" />
+                            <ui:NumberBox x:Name="YShiftInput" Value="0" SmallChange="0.1" ValueChanged="Alignment_Changed" Height="38" />
                         </StackPanel>
                     </Grid>
 
                     <!-- Gamma Parameters -->
-                    <TextBlock Text="Gamma Criteria" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
-                    <ui:Card Padding="10" Margin="0,0,0,20">
-                        <Grid Margin="0,5,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
+                    <TextBlock Text="Gamma Criteria" Style="{StaticResource DosimetrySectionHeader}" Margin="0,10,0,10" />
+                    <ui:Card Padding="12" Margin="0,0,0,20">
+                        <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -79,23 +86,27 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="DTA (mm)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
-                            <ui:NumberBox x:Name="GammaDtaInput" Grid.Row="0" Grid.Column="1" Value="2" Minimum="0.1" Margin="0,0,0,10" ValueChanged="GammaParams_Changed"/>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="DD (%)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
+                            <ui:NumberBox x:Name="GammaDdInput" Grid.Row="0" Grid.Column="1" Value="2" Minimum="0.1" Margin="0,0,0,10" ValueChanged="GammaParams_Changed" Height="34"/>
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="DD (%)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
-                            <ui:NumberBox x:Name="GammaDdInput" Grid.Row="1" Grid.Column="1" Value="2" Minimum="0.1" Margin="0,0,0,10" ValueChanged="GammaParams_Changed"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="DTA (mm)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
+                            <ui:NumberBox x:Name="GammaDtaInput" Grid.Row="1" Grid.Column="1" Value="2" Minimum="0.1" Margin="0,0,0,10" ValueChanged="GammaParams_Changed" Height="34"/>
 
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="Threshold (%)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
-                            <ui:NumberBox x:Name="GammaThresholdInput" Grid.Row="2" Grid.Column="1" Value="10" Minimum="0" Maximum="100" Margin="0,0,0,10" ValueChanged="GammaParams_Changed" />
+                            <ui:NumberBox x:Name="GammaThresholdInput" Grid.Row="2" Grid.Column="1" Value="10" Minimum="0" Maximum="100" Margin="0,0,0,10" ValueChanged="GammaParams_Changed" Height="34" />
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Plan Fx" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
-                            <ui:NumberBox x:Name="FractionsInput" Grid.Row="3" Grid.Column="1" Value="1" Minimum="1" Margin="0,0,0,10" ValueChanged="Alignment_Changed"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Fractions" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
+                            <ui:NumberBox x:Name="FractionsInput" Grid.Row="3" Grid.Column="1" Value="1" Minimum="1" Margin="0,0,0,10" ValueChanged="Alignment_Changed" Height="34"/>
 
                             <TextBlock Grid.Row="4" Grid.Column="0" Text="Mode" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,0"/>
-                            <ComboBox x:Name="GammaModeCombo" Grid.Row="4" Grid.Column="1" SelectedIndex="0" Margin="0,0,0,0" SelectionChanged="GammaParams_Changed">
-                                <ComboBoxItem Content="Global %" />
-                                <ComboBoxItem Content="Local %" />
+                            <ComboBox x:Name="GammaModeCombo" Grid.Row="4" Grid.Column="1" SelectedIndex="0" SelectionChanged="GammaParams_Changed" HorizontalAlignment="Stretch" Height="34">
+                                <ComboBoxItem Content="Global Normalization" />
+                                <ComboBoxItem Content="Local Normalization" />
                             </ComboBox>
                         </Grid>
                     </ui:Card>
@@ -105,24 +116,9 @@
                                Icon="{ui:SymbolIcon Play24}" 
                                Appearance="Primary" 
                                HorizontalAlignment="Stretch" 
-                               Height="45" 
+                               Height="48" 
                                Click="RunAnalysisButton_Click" 
                                IsEnabled="False"/>
-                    
-
-
-                    <Border x:Name="ResultsPanel" Margin="0,20,0,0" Visibility="Collapsed">
-                         <StackPanel>
-                             <TextBlock Text="Results" Style="{StaticResource DosimetrySectionHeader}" FontSize="16" Margin="0,0,0,10" />
-                             <Border Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="2" Padding="15">
-                                 <StackPanel>
-                                     <TextBlock Text="Gamma Pass Rate" FontSize="12" HorizontalAlignment="Center"/>
-                                     <TextBlock x:Name="PassRateText" Text="98.5 %" FontSize="28" FontWeight="Bold" Foreground="Lime" HorizontalAlignment="Center" Margin="0,5"/>
-                                     <TextBlock x:Name="PassRateStatus" Text="PASS (Criteria: 90%)" FontSize="10" HorizontalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                                 </StackPanel>
-                             </Border>
-                         </StackPanel>
-                    </Border>
                 </StackPanel>
             </ScrollViewer>
         </Border>
@@ -139,14 +135,9 @@
             </Grid.ColumnDefinitions>
 
             <!-- Top Left: Measured Dose -->
-            <Border Grid.Row="0" Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="5">
+            <Border Grid.Row="0" Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="2">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="Measured (Film)" HorizontalAlignment="Center" FontWeight="SemiBold" Margin="5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                    <Canvas x:Name="MeasuredCanvas" Grid.Row="1" ClipToBounds="True" Background="Transparent"
+                    <Canvas x:Name="MeasuredCanvas" ClipToBounds="True" Background="Transparent"
                             MouseLeftButtonDown="RoiCanvas_MouseDown" MouseMove="RoiCanvas_MouseMove" MouseLeftButtonUp="RoiCanvas_MouseUp">
                         <Image x:Name="MeasuredImage" Stretch="Uniform" 
                                Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Canvas}}" 
@@ -156,75 +147,67 @@
                             </Image.RenderTransform>
                         </Image>
                         <Rectangle x:Name="MeasuredRoiRect" Stroke="Cyan" StrokeThickness="1.5" StrokeDashArray="4,2" Fill="#18FFFFFF" Visibility="Collapsed" />
+                        <Line x:Name="MeasuredProfileLineH" Stroke="Orange" StrokeThickness="1.2" Visibility="Collapsed" />
+                        <Line x:Name="MeasuredProfileLineV" Stroke="Orange" StrokeThickness="1.2" Visibility="Collapsed" />
                     </Canvas>
-                    <TextBlock x:Name="MeasuredEmptyMsg" Grid.Row="1" Text="No Film Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    
+                    <!-- File Name Overlay (Top Right) -->
+                    <Border x:Name="FilmOverlayBorder" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Background="#99000000" CornerRadius="4" Padding="8,4" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Film: " Foreground="#CCCCCC" FontSize="10" FontWeight="Bold"/>
+                            <TextBlock x:Name="FilmOverlayText" Text="None" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock x:Name="MeasuredEmptyMsg" Text="No Film Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </Grid>
             </Border>
 
             <!-- Top Right: Planned Dose -->
-            <Border Grid.Row="0" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="5">
+            <Border Grid.Row="0" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="2">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="Planned (DICOM)" HorizontalAlignment="Center" FontWeight="SemiBold" Margin="5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                    <Canvas x:Name="PlannedCanvas" Grid.Row="1" ClipToBounds="True" Background="Transparent"
+                    <Canvas x:Name="PlannedCanvas" ClipToBounds="True" Background="Transparent"
                             MouseLeftButtonDown="RoiCanvas_MouseDown" MouseMove="RoiCanvas_MouseMove" MouseLeftButtonUp="RoiCanvas_MouseUp">
                         <Image x:Name="PlannedImage" Stretch="Uniform"
                                Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Canvas}}"
                                Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Canvas}}" />
                         <Rectangle x:Name="PlannedRoiRect" Stroke="Cyan" StrokeThickness="1.5" StrokeDashArray="4,2" Fill="#18FFFFFF" Visibility="Collapsed" />
+                        <Line x:Name="PlannedProfileLineH" Stroke="Orange" StrokeThickness="1.2" Visibility="Collapsed" />
+                        <Line x:Name="PlannedProfileLineV" Stroke="Orange" StrokeThickness="1.2" Visibility="Collapsed" />
                     </Canvas>
-                    <TextBlock x:Name="PlannedEmptyMsg" Grid.Row="1" Text="No Plan Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                    <!-- File Name Overlay (Top Right) -->
+                    <Border x:Name="DicomOverlayBorder" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Background="#99000000" CornerRadius="4" Padding="8,4" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="DICOM: " Foreground="#CCCCCC" FontSize="10" FontWeight="Bold"/>
+                            <TextBlock x:Name="DicomOverlayText" Text="None" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock x:Name="PlannedEmptyMsg" Text="No Plan Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </Grid>
             </Border>
 
             <!-- Bottom Left: Profiles -->
             <Border Grid.Row="1" Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="5">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <TextBlock Text="Profile Comparison" FontWeight="SemiBold" Margin="5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                        <ComboBox x:Name="ProfileAxisCombo" Width="101" Height="35" Margin="10,0,0,0" FontSize="10" SelectionChanged="ProfileAxisCombo_SelectionChanged">
-                            <ComboBoxItem Content="X-Axis" IsSelected="True" />
-                            <ComboBoxItem Content="Y-Axis" />
-                        </ComboBox>
-                    </StackPanel>
-                    <ScottPlot:WpfPlot x:Name="ProfilePlot" Grid.Row="1" />
-                </Grid>
+                <ScottPlot:WpfPlot x:Name="ProfilePlot" />
             </Border>
 
             <!-- Bottom Right: Gamma Map -->
-            <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="5" Background="#111111">
+            <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="2" Background="Transparent">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="Gamma Index Map" HorizontalAlignment="Center" FontWeight="SemiBold" Margin="5" Foreground="White" Opacity="0.7"/>
-                    <Image x:Name="GammaImage" Grid.Row="1" Stretch="Uniform" />
+                    <Image x:Name="GammaImage" Stretch="Uniform" />
                     
-                    <!-- Dose Source Overlay (Top Right) -->
-                    <StackPanel Grid.Row="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10">
-                        <Border Background="#99000000" CornerRadius="4" Padding="8,4" Margin="0,0,0,5" x:Name="FilmOverlayBorder" Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Film: " Foreground="#CCCCCC" FontSize="10" FontWeight="Bold"/>
-                                <TextBlock x:Name="FilmOverlayText" Text="None" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Background="#99000000" CornerRadius="4" Padding="8,4" x:Name="DicomOverlayBorder" Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="DICOM: " Foreground="#CCCCCC" FontSize="10" FontWeight="Bold"/>
-                                <TextBlock x:Name="DicomOverlayText" Text="None" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
+                    <!-- Gamma Results Overlay (Top Left Header) -->
+                    <Border x:Name="GammaResultsOverlay" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5" Background="#BB000000" CornerRadius="4" Padding="10,2" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="GAMMA PASS RATE: " Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="OverlayPassRateText" Text="--" Foreground="White" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" Margin="5,0,10,0"/>
+                            <TextBlock x:Name="OverlayStatusText" Text="--" Foreground="#888888" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
 
-                    <TextBlock x:Name="GammaEmptyMsg" Grid.Row="1" Text="Run Analysis to view Gamma Map" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#666666" />
+                    <TextBlock x:Name="GammaEmptyMsg" Text="Run Analysis to view Gamma Map" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#666666" />
                 </Grid>
             </Border>
         </Grid>

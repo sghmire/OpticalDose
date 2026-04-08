@@ -10,7 +10,7 @@ namespace FilmAnalysis
         /// Performs a polynomial fit (Least Squares) of the specified degree.
         /// Returns coefficients from highest power to lowest (e.g., [a, b, c] for ax^2 + bx + c).
         /// </summary>
-        public static double[] PolyFit(double[] x, double[] y, int degree)
+        public static double[] PolyFit(double[] x, double[] y, int degree, double ridgeLambda = 1e-8)
         {
             if (x.Length != y.Length || x.Length <= degree)
                 throw new ArgumentException("Insufficient data points for the requested degree.");
@@ -31,6 +31,8 @@ namespace FilmAnalysis
             // Normal Equations: (A^T * A) * c = A^T * y
             double[,] At = Transpose(A);
             double[,] AtA = Multiply(At, A);
+            // Tikhonov regularization for stability (ridge)
+            for (int i = 0; i < m; i++) AtA[i, i] += ridgeLambda;
             double[] AtY = Multiply(At, y);
 
             return SolveLinearSystem(AtA, AtY);
@@ -68,7 +70,8 @@ namespace FilmAnalysis
         /// </summary>
         public static double OptimizeTripleChannelDelta(
             double[] redNorm, double[] greenNorm, double[] blueNorm,
-            double[] redFit, double[] greenFit, double[] blueFit)
+            double[] redFit, double[] greenFit, double[] blueFit,
+            double[]? referenceDose = null)
         {
             Func<double, double> objective = (delta) =>
             {
@@ -79,9 +82,19 @@ namespace FilmAnalysis
                     double gDose = PolyVal(greenFit, greenNorm[i] * delta);
                     double bDose = PolyVal(blueFit, blueNorm[i] * delta);
 
-                    sum += Math.Pow(rDose - gDose, 2) + 
-                           Math.Pow(rDose - bDose, 2) + 
-                           Math.Pow(gDose - bDose, 2);
+                    if (referenceDose != null)
+                    {
+                        double avg = (rDose + gDose + bDose) / 3.0;
+                        double diff = avg - referenceDose[i];
+                        sum += diff * diff; // fit to ground truth
+                    }
+                    else
+                    {
+                        // legacy: channel agreement only
+                        sum += Math.Pow(rDose - gDose, 2) +
+                               Math.Pow(rDose - bDose, 2) +
+                               Math.Pow(gDose - bDose, 2);
+                    }
                 }
                 return sum;
             };

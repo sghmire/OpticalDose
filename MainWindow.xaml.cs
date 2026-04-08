@@ -457,10 +457,105 @@ namespace FilmAnalysis
                 Foreground = (Brush)FindResource("TextFillColorSecondaryBrush")
             });
 
+            // Math documentation
+            stack.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "Math Reference",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 10, 0, 4)
+            });
+
+            var docText = "• Optical Density (OD): OD = -log10(pixel/65535).\n" +
+                          "• Single-channel fit: dose = Poly(OD) using Vandermonde LS with ridge λ=1e-8.\n" +
+                          "• Dual-channel fit: ratio = OD(primary)/OD(blue); dose = Poly2(Poly1(ratio)).\n" +
+                          "• Triple-channel fit: per-channel Poly(OD); delta chosen by minimizing (avgDose - refDose)^2; dose = mean of channel doses.\n" +
+                          "• Gamma analysis: classic Low criterion with DD%/DTA mm, optional global/local norm, sub-pixel search, bicubic interp, uncertainty margin.\n" +
+                          "• FWHM field size: profiles normalized; edges at 50% of peak (max/mean/median); FWHM = right-left; reported mean±SD across sampled lines.\n" +
+                          "• Interpolation: nearest/linear/bicubic with clamped borders; guards against 1-pixel dimensions.\n" +
+                          "• Filters: median/box/gaussian with sigma→kernel; noise filter clamps NaN/Inf/outliers.";
+
+            stack.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = docText,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+
             var dialog = new ContentDialog(_dialogService.GetContentPresenter())
             {
                 Title = "About Film Tools",
                 Content = stack,
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close
+            };
+
+            await dialog.ShowAsync();
+        }
+
+        private async void References_Click(object sender, RoutedEventArgs e)
+        {
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Height = 500 };
+            var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(10), MaxWidth = 520 };
+
+            stack.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "Mathematical References",
+                FontSize = 20,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+
+            void AddSection(string title, string body)
+            {
+                stack.Children.Add(new System.Windows.Controls.TextBlock
+                {
+                    Text = title,
+                    FontSize = 14,
+                    FontWeight = FontWeights.Bold,
+                    Margin = new Thickness(0, 10, 0, 4)
+                });
+                stack.Children.Add(new System.Windows.Controls.TextBlock
+                {
+                    Text = body,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 4)
+                });
+            }
+
+            AddSection("Optical Density",
+                "OD = -log10(pixel / 65535). Pixel floor at 1 to avoid log(0). Used per channel to linearize film response.");
+
+            AddSection("Single-Channel Calibration",
+                "Fit: dose = P(OD), where P is an n-degree polynomial (Vandermonde least squares) with ridge λ=1e-8 for stability. R² computed against reference doses.");
+
+            AddSection("Dual-Channel Calibration",
+                "Compute ratio = OD_primary / OD_blue. First polynomial maps ratio → surrogate OD. Second polynomial maps surrogate → dose. Dose = P2(P1(ratio)).");
+
+            AddSection("Triple-Channel Calibration",
+                "Channel fits: dose_r = Pr(OD_r), dose_g = Pg(OD_g), dose_b = Pb(OD_b). Delta is optimized to minimize Σ(avg(dose_r(δ·OD_r), dose_g(δ·OD_g), dose_b(δ·OD_b)) − dose_ref)². Final dose = mean of channel doses (with delta applied to OD inputs).");
+
+            AddSection("Gamma Analysis",
+                "Implements classic Low gamma: γ² = (ΔD / DD%)² + (Δr / DTA)². Options: global vs local normalization; uncertainty margin subtracts from |ΔD|; sub-pixel search step; bicubic interpolation. Thresholding skips pixels below (threshold% of max plan dose). ROI optional.");
+
+            AddSection("Interpolation",
+                "Nearest, bilinear, bicubic with clamped borders. Degenerate 1-pixel dimensions handled to avoid division by zero.");
+
+            AddSection("Filtering",
+                "Median, box, and Gaussian (σ → radius 3σ). Noise filter replaces NaN/Inf/outliers above threshold with 1.");
+
+            AddSection("FWHM Field Size",
+                "Profiles extracted across plateau window. Peak by method (Max/Mean/Median). Edges at 50% of peak via linear interpolation; FWHM = right − left. Reported mean ± SD across sampled rows/columns; coverage = plateauX × plateauY.");
+
+            AddSection("Delta Optimization (Triple)",
+                "Golden-section search in [0.8, 1.2], 50 iterations. Objective uses reference dose if provided; otherwise minimizes inter-channel disagreement.");
+
+            scroll.Content = stack;
+
+            var dialog = new ContentDialog(_dialogService.GetContentPresenter())
+            {
+                Title = "References",
+                Content = scroll,
                 CloseButtonText = "Close",
                 DefaultButton = ContentDialogButton.Close
             };
@@ -1170,7 +1265,7 @@ namespace FilmAnalysis
                     CurrentConfig.FirstFit = FittingMath.PolyFit(rNorm, doses, degree);
                     CurrentConfig.SecondFit = FittingMath.PolyFit(gNorm, doses, degree);
                     CurrentConfig.ThirdFit = FittingMath.PolyFit(bNorm, doses, degree);
-                    CurrentConfig.DeltaOpt = FittingMath.OptimizeTripleChannelDelta(rNorm, gNorm, bNorm, CurrentConfig.FirstFit, CurrentConfig.SecondFit, CurrentConfig.ThirdFit);
+                    CurrentConfig.DeltaOpt = FittingMath.OptimizeTripleChannelDelta(rNorm, gNorm, bNorm, CurrentConfig.FirstFit, CurrentConfig.SecondFit, CurrentConfig.ThirdFit, doses);
                     doseFit = new double[doses.Length];
                     for (int i = 0; i < doses.Length; i++) {
                         double rD = FittingMath.PolyVal(CurrentConfig.FirstFit!, rNorm[i] * CurrentConfig.DeltaOpt);
@@ -1717,9 +1812,18 @@ namespace FilmAnalysis
                     }
                 });
 
+                double actualScaleX = newW / (double)_imgWidth;
+                double actualScaleY = newH / (double)_imgHeight;
+
                 _imgWidth = newW; _imgHeight = newH;
-                _dpiX *= scale; 
-                _dpiY *= scale; // Maintain physical dimensions by scaling DPI
+                _dpiX *= actualScaleX; 
+                _dpiY *= actualScaleY; // Maintain physical dimensions by using actual achieved scale
+
+                if (doseMode)
+                {
+                    _filmDpiX = _dpiX;
+                    _filmDpiY = _dpiY;
+                }
 
                 UpdateCropUI();
                 MetaDPI.Text = _dpiX == _dpiY ? _dpiX.ToString("F1") : $"{_dpiX:F1}x{_dpiY:F1}"; // Update UI Metadata

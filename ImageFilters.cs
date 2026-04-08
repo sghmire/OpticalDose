@@ -146,16 +146,18 @@ namespace FilmAnalysis
                 return output;
             }
 
-            double rowDen = Math.Max(newH - 1, 1); // clamp to 1 to avoid zero division
-            double colDen = Math.Max(newW - 1, 1);
+            // Using direct linear mapping to preserve the physical reference point (0,0) 
+            // used in the origin calculation: pos = (index - N/2) * spacing.
+            double rowScale = (double)oldH / newH;
+            double colScale = (double)oldW / newW;
 
             Parallel.For(0, newH, newRow =>
             {
                 for (int newCol = 0; newCol < newW; newCol++)
                 {
                     // Map output pixel to input coordinates
-                    double srcRow = newRow / rowDen * (oldH - 1);
-                    double srcCol = newCol / colDen * (oldW - 1);
+                    double srcRow = newRow * rowScale;
+                    double srcCol = newCol * colScale;
 
                     if (method == "Nearest")
                     {
@@ -181,13 +183,28 @@ namespace FilmAnalysis
 
         public static double BilinearSample(double[,] data, double row, double col, int h, int w)
         {
-            int r0 = Math.Clamp((int)row, 0, h - 2);
-            int c0 = Math.Clamp((int)col, 0, w - 2);
-            double fr = row - r0, fc = col - c0;
-            return data[r0, c0] * (1 - fr) * (1 - fc) +
-                   data[r0, c0 + 1] * (1 - fr) * fc +
-                   data[r0 + 1, c0] * fr * (1 - fc) +
-                   data[r0 + 1, c0 + 1] * fr * fc;
+            int r0 = (int)Math.Floor(row);
+            int r1 = r0 + 1;
+            int c0 = (int)Math.Floor(col);
+            int c1 = c0 + 1;
+
+            double fr = row - r0;
+            double fc = col - c0;
+
+            r0 = Math.Clamp(r0, 0, h - 1);
+            r1 = Math.Clamp(r1, 0, h - 1);
+            c0 = Math.Clamp(c0, 0, w - 1);
+            c1 = Math.Clamp(c1, 0, w - 1);
+
+            double v00 = data[r0, c0];
+            double v01 = data[r0, c1];
+            double v10 = data[r1, c0];
+            double v11 = data[r1, c1];
+
+            return v00 * (1 - fr) * (1 - fc) +
+                   v01 * (1 - fr) * fc +
+                   v10 * fr * (1 - fc) +
+                   v11 * fr * fc;
         }
 
         public static double BicubicSample(double[,] data, double row, double col, int h, int w)

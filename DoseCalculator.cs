@@ -48,11 +48,11 @@ namespace FilmAnalysis
             }
             else if (mode.Contains("Triple"))
             {
-                double doseR = FittingMath.PolyVal(config.FirstFit!, rOD);
-                double doseG = FittingMath.PolyVal(config.SecondFit!, gOD);
-                double doseB = FittingMath.PolyVal(config.ThirdFit!, bOD);
+                double doseR = FittingMath.PolyVal(config.FirstFit!, rOD * delta);
+                double doseG = FittingMath.PolyVal(config.SecondFit!, gOD * delta);
+                double doseB = FittingMath.PolyVal(config.ThirdFit!, bOD * delta);
 
-                return Math.Max(0, ((doseR + doseG + doseB) / 3.0) * delta);
+                return Math.Max(0, (doseR + doseG + doseB) / 3.0);
             }
 
             throw new InvalidOperationException($"Unsupported mode '{mode}'.");

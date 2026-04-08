@@ -128,6 +128,9 @@ namespace FilmAnalysis
             _patientName = dataset.GetSingleValueOrDefault(DicomTag.PatientName, "N/A");
             MetaPatient.Text = _patientName;
 
+            string patientId = dataset.GetSingleValueOrDefault(DicomTag.PatientID, "N/A");
+            MetaPatientId.Text = patientId;
+
             int rows = dataset.GetSingleValue<ushort>(DicomTag.Rows);
             int cols = dataset.GetSingleValue<ushort>(DicomTag.Columns);
             int frames = dataset.GetSingleValueOrDefault(DicomTag.NumberOfFrames, 1);

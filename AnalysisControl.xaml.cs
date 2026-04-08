@@ -38,6 +38,12 @@ namespace FilmAnalysis
         // ROI in physical DICOM LPS coords (mm)
         private double _roiLpsMinX, _roiLpsMaxX, _roiLpsMinY, _roiLpsMaxY;
         private bool _hasRoi = false;
+
+        // Profile sampling
+        private bool _profilePickMode = false;
+        private bool _profileDragging = false;
+        private bool _hasProfilePoint = false;
+        private double _profileLpsX = 0, _profileLpsY = 0;
         
         // Film physical geometry
         private double _filmOriginX = 0, _filmOriginY = 0;
@@ -77,11 +83,27 @@ namespace FilmAnalysis
             MeasuredEmptyMsg.Visibility = Visibility.Collapsed;
             RefreshImages();
             UpdateProfiles();
+            UpdateProfileCrosshairs();
             CheckReady();
         }
 
         public void SetPlanDose(double[,] dose, double dpiX, double dpiY, double refX, double refY, double refZ, double origX, double origY, double spacingYSign, string orientation, string fileName)
         {
+            if (spacingYSign < 0)
+            {
+                int rows = dose.GetLength(0);
+                int cols = dose.GetLength(1);
+                var flipped = new double[rows, cols];
+                for (int r = 0; r < rows; r++)
+                    for (int c = 0; c < cols; c++)
+                        flipped[r, c] = dose[rows - 1 - r, c];
+                
+                dose = flipped;
+                double spYmm = (25.4 / dpiY);
+                origY = origY + (rows - 1) * (spYmm * spacingYSign);
+                spacingYSign = 1.0;
+            }
+
             _planDose = dose;
             _planDpiX = dpiX;
             _planDpiY = dpiY;
@@ -99,6 +121,7 @@ namespace FilmAnalysis
             PlannedEmptyMsg.Visibility = Visibility.Collapsed;
             RefreshImages();
             UpdateProfiles();
+            UpdateProfileCrosshairs();
             CheckReady();
         }
 
@@ -109,10 +132,6 @@ namespace FilmAnalysis
             
             RunAnalysisButton.IsEnabled = (hasFilm && hasPlan);
             SelectRoiButton.IsEnabled = (hasFilm || hasPlan);
-
-            // Update Sync Button Appearances to indicate if data is already present
-            SyncFilmButton.Appearance = hasFilm ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
-            SyncDicomButton.Appearance = hasPlan ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
         }
 
         private void RefreshImages()
@@ -169,9 +188,31 @@ namespace FilmAnalysis
             
             double fractions = FractionsInput.Value ?? 1.0;
 
+            // Map profile point to film/plan indices if selected
+            int filmRow = _filmDose != null ? _filmDose.GetLength(0) / 2 : 0;
+            int filmCol = _filmDose != null ? _filmDose.GetLength(1) / 2 : 0;
+            int planRow = _planDose != null ? _planDose.GetLength(0) / 2 : 0;
+            int planCol = _planDose != null ? _planDose.GetLength(1) / 2 : 0;
+
+            if (_hasProfilePoint)
+            {
+                if (_filmDose != null)
+                {
+                    var fracFilm = LpsToFilmFrac(_profileLpsX, _profileLpsY);
+                    filmCol = (int)Math.Round(Math.Clamp(fracFilm.X, 0, 0.9999) * (_filmDose.GetLength(1) - 1));
+                    filmRow = (int)Math.Round(Math.Clamp(fracFilm.Y, 0, 0.9999) * (_filmDose.GetLength(0) - 1));
+                }
+                if (_planDose != null)
+                {
+                    var fracPlan = LpsToPlanFrac(_profileLpsX, _profileLpsY);
+                    planCol = (int)Math.Round(Math.Clamp(fracPlan.X, 0, 0.9999) * (_planDose.GetLength(1) - 1));
+                    planRow = (int)Math.Round(Math.Clamp(fracPlan.Y, 0, 0.9999) * (_planDose.GetLength(0) - 1));
+                }
+            }
+
             if (_planDose != null)
             {
-                var planProfile = GetCenterProfile(_planDose, isX);
+                var planProfile = GetProfileAt(_planDose, isX, planRow, planCol);
                 double spX = 25.4 / _planDpiX;
                 double spY = 25.4 / _planDpiY;
                 
@@ -191,7 +232,7 @@ namespace FilmAnalysis
 
             if (_filmDose != null)
             {
-                var filmProfile = GetCenterProfile(_filmDose, isX);
+                var filmProfile = GetProfileAt(_filmDose, isX, filmRow, filmCol);
                 double spacing = 25.4 / (isX ? _filmDpiX : _filmDpiY);
                 double shift = isX ? (_filmDose != null ? (XShiftInput.Value ?? 0.0) : 0.0) : (_filmDose != null ? (YShiftInput.Value ?? 0.0) : 0.0);
                 double fOrg = isX ? _filmOriginX : _filmOriginY;
@@ -208,22 +249,23 @@ namespace FilmAnalysis
             ProfilePlot.Refresh();
         }
 
-        private double[] GetCenterProfile(double[,] dose, bool horizontal)
+        private double[] GetProfileAt(double[,] dose, bool horizontal, int fixedRow, int fixedCol)
         {
             int h = dose.GetLength(0);
             int w = dose.GetLength(1);
+            fixedRow = Math.Clamp(fixedRow, 0, h - 1);
+            fixedCol = Math.Clamp(fixedCol, 0, w - 1);
+
             if (horizontal)
             {
-                int midY = h / 2;
                 double[] p = new double[w];
-                for (int x = 0; x < w; x++) p[x] = dose[midY, x];
+                for (int x = 0; x < w; x++) p[x] = dose[fixedRow, x];
                 return p;
             }
             else
             {
-                int midX = w / 2;
                 double[] p = new double[h];
-                for (int y = 0; y < h; y++) p[y] = dose[y, midX];
+                for (int y = 0; y < h; y++) p[y] = dose[y, fixedCol];
                 return p;
             }
         }
@@ -302,7 +344,7 @@ namespace FilmAnalysis
             {
                 for (int fx = 0; fx < fw; fx++)
                 {
-                    double filmVal = _filmDose[fy, fx];
+                    double filmVal = filmDose[fy, fx];
                     if (filmVal < threshVal) { _gammaMap[fy, fx] = double.NaN; continue; }
 
                     // Film physical position
@@ -512,8 +554,8 @@ namespace FilmAnalysis
                     int idx = y * stride + x * 4;
                     if (double.IsNaN(g))
                     {
-                        // Background (Transparent or Gray)
-                        pixels[idx] = 20; pixels[idx+1] = 20; pixels[idx+2] = 20; pixels[idx+3] = 255;
+                        // Set to transparent
+                        pixels[idx] = 0; pixels[idx + 1] = 0; pixels[idx + 2] = 0; pixels[idx + 3] = 0;
                         continue;
                     }
 
@@ -535,10 +577,14 @@ namespace FilmAnalysis
 
             double passRate = (double)passPoints / totalPoints * 100.0;
             _lastPassRate = passRate;
-            PassRateText.Text = $"{passRate:F1} %";
-            PassRateText.Foreground = passRate >= 90 ? Brushes.Lime : Brushes.Red;
-            PassRateStatus.Text = passRate >= 90 ? "PASS (Criteria: 90%)" : "FAIL (Criteria: 90%)";
-            ResultsPanel.Visibility = Visibility.Visible;
+
+            OverlayPassRateText.Text = $"{passRate:F1} %";
+            OverlayPassRateText.Foreground = passRate >= 90 ? Brushes.Lime : Brushes.Red;
+            OverlayStatusText.Text = passRate >= 90 ? "PASS (Criteria: 90%)" : "FAIL (Criteria: 90%)";
+            GammaResultsOverlay.Visibility = Visibility.Visible;
+            
+            // Sync with sidebar results panel if it still exists (it might be hidden but let's keep it safe)
+            GammaResultsOverlay.Visibility = Visibility.Visible;
         }
 
         private void StatusIndicatorActive(bool active)
@@ -571,6 +617,12 @@ namespace FilmAnalysis
         }
         private void GammaParams_Changed(object sender, RoutedEventArgs e) { /* Auto-run optional */ }
         private void ProfileAxisCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateProfiles();
+        private void PickProfilePoint_Click(object sender, RoutedEventArgs e)
+        {
+            _profilePickMode = true;
+            Cursor = Cursors.Cross;
+            PickProfileButton.Content = "Click map...";
+        }
 
         // ===== ROI Selection =====
 
@@ -592,13 +644,57 @@ namespace FilmAnalysis
             CropButton.IsEnabled = false;
             SelectRoiButton.Content = "Select ROI";
             SelectRoiButton.IsEnabled = (_filmDose != null || _planDose != null);
-            RoiStatusText.Text = "No ROI selected";
             Cursor = Cursors.Arrow;
         }
 
         private void RoiCanvas_MouseDown(object sender, MouseButtonEventArgs e)
         {
-            if (!_roiSelectMode) return;
+            if (_profilePickMode)
+            {
+                var canvas = sender as Canvas;
+                if (canvas == null) return;
+                HandleProfilePick(canvas, e.GetPosition(canvas));
+                return;
+            }
+
+            if (!_roiSelectMode)
+            {
+                // Check if user is trying to drag the profile crosshair
+                if (_hasProfilePoint)
+                {
+                    var canvas = sender as Canvas;
+                    if (canvas == null) return;
+                    
+                    var pos = e.GetPosition(canvas);
+                    var (fx, fy) = GetFractionalFromCanvas(canvas, pos, 1, 1); // just for relative coords
+                    
+                    // Convert current profile LPS to canvas pixels for this canvas
+                    var curFrac = canvas == MeasuredCanvas ? LpsToFilmFrac(_profileLpsX, _profileLpsY) : LpsToPlanFrac(_profileLpsX, _profileLpsY);
+                    
+                    // Actually checking distance in canvas pixels is better
+                    double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+                    int imgCols = canvas == MeasuredCanvas ? _filmDose.GetLength(1) : _planDose.GetLength(1);
+                    int imgRows = canvas == MeasuredCanvas ? _filmDose.GetLength(0) : _planDose.GetLength(0);
+                    
+                    double imgAspect = (double)imgCols / imgRows;
+                    double canAspect = cw / ch;
+                    double rw, rh, ox, oy;
+                    if (imgAspect > canAspect) { rw = cw; rh = cw / imgAspect; ox = 0; oy = (ch - rh) / 2; }
+                    else { rh = ch; rw = ch * imgAspect; ox = (cw - rw) / 2; oy = 0; }
+                    
+                    double curX = ox + curFrac.X * rw;
+                    double curY = oy + curFrac.Y * rh;
+                    
+                    double dist = Math.Sqrt(Math.Pow(pos.X - curX, 2) + Math.Pow(pos.Y - curY, 2));
+                    if (dist < 25) // 25 pixel radius for dragging
+                    {
+                        _profileDragging = true;
+                        canvas.CaptureMouse();
+                        return;
+                    }
+                }
+                return;
+            }
             _roiActiveCanvas = sender as Canvas;
             if (_roiActiveCanvas == null) return;
 
@@ -617,14 +713,33 @@ namespace FilmAnalysis
 
         private void RoiCanvas_MouseMove(object sender, MouseEventArgs e)
         {
+            var canvas = sender as Canvas;
+            if (canvas == null) return;
+
+            if (_profileDragging)
+            {
+                var pos = e.GetPosition(canvas);
+                int imgCols = canvas == MeasuredCanvas ? _filmDose.GetLength(1) : _planDose.GetLength(1);
+                int imgRows = canvas == MeasuredCanvas ? _filmDose.GetLength(0) : _planDose.GetLength(0);
+                (double fracX, double fracY) = GetFractionalFromCanvas(canvas, pos, imgCols, imgRows);
+
+                Point lps = canvas == MeasuredCanvas ? FilmFracToLps(fracX, fracY) : PlanFracToLps(fracX, fracY);
+                _profileLpsX = lps.X;
+                _profileLpsY = lps.Y;
+
+                UpdateProfileCrosshairs();
+                UpdateProfiles();
+                return;
+            }
+
             if (!_roiDragging || _roiActiveCanvas == null) return;
-            var pos = e.GetPosition(_roiActiveCanvas);
+            var posR = e.GetPosition(_roiActiveCanvas);
 
             var rect = _roiActiveCanvas == MeasuredCanvas ? MeasuredRoiRect : PlannedRoiRect;
-            double x = Math.Min(_roiStart.X, pos.X);
-            double y = Math.Min(_roiStart.Y, pos.Y);
-            double w = Math.Abs(pos.X - _roiStart.X);
-            double h = Math.Abs(pos.Y - _roiStart.Y);
+            double x = Math.Min(_roiStart.X, posR.X);
+            double y = Math.Min(_roiStart.Y, posR.Y);
+            double w = Math.Abs(posR.X - _roiStart.X);
+            double h = Math.Abs(posR.Y - _roiStart.Y);
 
             Canvas.SetLeft(rect, x);
             Canvas.SetTop(rect, y);
@@ -634,6 +749,13 @@ namespace FilmAnalysis
 
         private void RoiCanvas_MouseUp(object sender, MouseButtonEventArgs e)
         {
+            if (_profileDragging)
+            {
+                _profileDragging = false;
+                (sender as Canvas)?.ReleaseMouseCapture();
+                return;
+            }
+
             if (!_roiDragging || _roiActiveCanvas == null) return;
             _roiDragging = false;
             _roiActiveCanvas.ReleaseMouseCapture();
@@ -694,10 +816,74 @@ namespace FilmAnalysis
 
             // Show ROI on both canvases
             SyncRoiRectangles();
+        }
 
-            double widthMm = _roiLpsMaxX - _roiLpsMinX;
-            double heightMm = _roiLpsMaxY - _roiLpsMinY;
-            RoiStatusText.Text = $"ROI: {widthMm:F1} x {heightMm:F1} mm (Physical Area)";
+        private void HandleProfilePick(Canvas canvas, Point pos)
+        {
+            if ((_filmDose == null && canvas == MeasuredCanvas) || (_planDose == null && canvas == PlannedCanvas))
+                return;
+
+            int imgCols = canvas == MeasuredCanvas ? _filmDose.GetLength(1) : _planDose.GetLength(1);
+            int imgRows = canvas == MeasuredCanvas ? _filmDose.GetLength(0) : _planDose.GetLength(0);
+            (double fracX, double fracY) = GetFractionalFromCanvas(canvas, pos, imgCols, imgRows);
+
+            Point lps = canvas == MeasuredCanvas ? FilmFracToLps(fracX, fracY) : PlanFracToLps(fracX, fracY);
+            _profileLpsX = lps.X;
+            _profileLpsY = lps.Y;
+            _hasProfilePoint = true;
+            _profilePickMode = false;
+            Cursor = Cursors.Arrow;
+            PickProfileButton.Content = "Pick Profile Point";
+
+            UpdateProfileCrosshairs();
+            UpdateProfiles();
+        }
+
+        private (double fracX, double fracY) GetFractionalFromCanvas(Canvas canvas, Point pos, int imgCols, int imgRows)
+        {
+            double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+            double imgAspect = (double)imgCols / imgRows;
+            double canAspect = cw / ch;
+            double rw, rh, ox, oy;
+            if (imgAspect > canAspect) { rw = cw; rh = cw / imgAspect; ox = 0; oy = (ch - rh) / 2; }
+            else { rh = ch; rw = ch * imgAspect; ox = (cw - rw) / 2; oy = 0; }
+
+            double fracX = Math.Clamp((pos.X - ox) / rw, 0, 1);
+            double fracY = Math.Clamp((pos.Y - oy) / rh, 0, 1);
+            return (fracX, fracY);
+        }
+
+        private void UpdateProfileCrosshairs()
+        {
+            if (!_hasProfilePoint) { MeasuredProfileLineH.Visibility = MeasuredProfileLineV.Visibility = Visibility.Collapsed; PlannedProfileLineH.Visibility = PlannedProfileLineV.Visibility = Visibility.Collapsed; return; }
+
+            if (_filmDose != null)
+            {
+                var frac = LpsToFilmFrac(_profileLpsX, _profileLpsY);
+                DrawCrosshair(MeasuredCanvas, frac.X, frac.Y, MeasuredProfileLineH, MeasuredProfileLineV, _filmDose.GetLength(1), _filmDose.GetLength(0));
+            }
+            if (_planDose != null)
+            {
+                var frac = LpsToPlanFrac(_profileLpsX, _profileLpsY);
+                DrawCrosshair(PlannedCanvas, frac.X, frac.Y, PlannedProfileLineH, PlannedProfileLineV, _planDose.GetLength(1), _planDose.GetLength(0));
+            }
+        }
+
+        private void DrawCrosshair(Canvas canvas, double fracX, double fracY, System.Windows.Shapes.Line hLine, System.Windows.Shapes.Line vLine, int imgCols, int imgRows)
+        {
+            double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+            double imgAspect = (double)imgCols / imgRows;
+            double canAspect = cw / ch;
+            double rw, rh, ox, oy;
+            if (imgAspect > canAspect) { rw = cw; rh = cw / imgAspect; ox = 0; oy = (ch - rh) / 2; }
+            else { rh = ch; rw = ch * imgAspect; ox = (cw - rw) / 2; oy = 0; }
+
+            double x = ox + Math.Clamp(fracX, 0, 1) * rw;
+            double y = oy + Math.Clamp(fracY, 0, 1) * rh;
+
+            hLine.X1 = ox; hLine.X2 = ox + rw; hLine.Y1 = hLine.Y2 = y;
+            vLine.Y1 = oy; vLine.Y2 = oy + rh; vLine.X1 = vLine.X2 = x;
+            hLine.Visibility = vLine.Visibility = Visibility.Visible;
         }
 
         private Point FilmFracToLps(double fracX, double fracY)
