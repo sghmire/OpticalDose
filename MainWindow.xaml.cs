@@ -35,8 +35,8 @@ namespace FilmAnalysis
         public ICommand AlignmentCommand => new FilmRelayCommand(OpenAlignmentWindow);
         public ICommand JawSizeCommand => new FilmRelayCommand(OpenJawSizeWindow);
         public ICommand GammaCommand => new FilmRelayCommand(OpenGammaWindow);
-        public ObservableCollection<CalibrationPoint> CalibrationPoints { get; set; }
-        public CalibrationConfig CurrentConfig { get; set; }
+        public ObservableCollection<CalibrationPoint> CalibrationPoints { get; set; } = new();
+        public CalibrationConfig? CurrentConfig { get; set; }
         private readonly IContentDialogService _dialogService = new ContentDialogService();
 
         // Application State
@@ -62,22 +62,22 @@ namespace FilmAnalysis
         private List<Point> _measurementPoints = new();
 
         // Raw High-Precision Image Data
-        private double[,] _redChannel;
-        private double[,] _greenChannel;
-        private double[,] _blueChannel;
+        private double[,]? _redChannel;
+        private double[,]? _greenChannel;
+        private double[,]? _blueChannel;
         private int _imgWidth, _imgHeight;
         private double _dpiX = 72, _dpiY = 72; // Independent X and Y DPI
-        private string _calibrationsFolder;
+        private string _calibrationsFolder = "";
 
         // Dosimetry States
-        private double[,] _doseMap;
-        private double[,] _filmDoseMap; // Dedicated film dose storage
+        private double[,]? _doseMap;
+        private double[,]? _filmDoseMap; // Dedicated film dose storage
         private double _filmDpiX, _filmDpiY;
-        private ImageSource _rawImageSource;
+        private ImageSource? _rawImageSource;
         private bool _isShowingDoseMap = false;
         
         // Imported Plan Dose for direct Analysis loading
-        private double[,] _importedPlanDose;
+        private double[,]? _importedPlanDose;
         private double _importedPlanDpiX, _importedPlanDpiY;
         private double _importedPlanOriginX, _importedPlanOriginY;
         private double _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ;
@@ -120,8 +120,8 @@ namespace FilmAnalysis
             MasterImageContainer.SizeChanged += (s, e) => UpdateRulers();
 
             // Keyboard shortcuts for Undo/Redo
-            InputBindings.Add(new KeyBinding(new RelayCommand(() => Undo_Click(null, null)), Key.Z, ModifierKeys.Control));
-            InputBindings.Add(new KeyBinding(new RelayCommand(() => Redo_Click(null, null)), Key.Y, ModifierKeys.Control));
+            InputBindings.Add(new KeyBinding(new RelayCommand(() => Undo_Click(null!, null!)), Key.Z, ModifierKeys.Control));
+            InputBindings.Add(new KeyBinding(new RelayCommand(() => Redo_Click(null!, null!)), Key.Y, ModifierKeys.Control));
 
             InitializeColorMaps();
         }
@@ -829,6 +829,8 @@ namespace FilmAnalysis
 
         #region Undo / Redo
 
+        private const int MaxUndoStates = 10;
+
         private void PushUndo(string description)
         {
             _undoStack.Push(new ImageState
@@ -845,6 +847,18 @@ namespace FilmAnalysis
                 Description = description
             });
             _redoStack.Clear();
+
+            // Cap undo stack to prevent unbounded memory growth
+            while (_undoStack.Count > MaxUndoStates)
+            {
+                // Remove oldest items by rebuilding with only the newest MaxUndoStates
+                var temp = _undoStack.ToArray();
+                _undoStack.Clear();
+                for (int i = Math.Min(temp.Length, MaxUndoStates) - 1; i >= 0; i--)
+                    _undoStack.Push(temp[i]);
+                break;
+            }
+
             UpdateUndoRedoUI();
         }
 
@@ -961,7 +975,7 @@ namespace FilmAnalysis
             if (NavAnalysisButton != null) NavAnalysisButton.Tag = index == 2 ? "Active" : "";
         }
 
-        private void AnalysisComp_SyncRequested(object sender, EventArgs e)
+        private void AnalysisComp_SyncRequested(object? sender, EventArgs e)
         {
             SyncAllDataToAnalysis();
         }
@@ -1013,7 +1027,7 @@ namespace FilmAnalysis
                                    _activeDicomFileName);
 
             // Switching to Analysis Tab now handled by UI
-            MenuSelectAnalysis_Click(null, null);
+            MenuSelectAnalysis_Click(null!, null!);
 
             StatusText.Text = "Plan Dose Extracted to Analysis!";
             StatusIndicator.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF228B22"));
@@ -1067,7 +1081,8 @@ namespace FilmAnalysis
         private void ConfigComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ConfigComboBox.SelectedIndex <= 0) return;
-            string fileName = ConfigComboBox.SelectedItem.ToString();
+            string? fileName = ConfigComboBox.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(fileName)) return;
             string fullPath = System.IO.Path.Combine(_calibrationsFolder, fileName);
             LoadCalibrationConfig(fullPath);
         }
@@ -1095,7 +1110,7 @@ namespace FilmAnalysis
                     if (string.IsNullOrEmpty(currentSection))
                     {
                         if (trimmed.StartsWith("Channel:")) newConfig.Channel = trimmed.Substring("Channel:".Length).Trim();
-                        else if (trimmed.StartsWith("Degree:")) newConfig.Degree = int.Parse(trimmed.Substring("Degree:".Length).Trim());
+                        else if (trimmed.StartsWith("Degree:")) newConfig.Degree = int.Parse(trimmed.Substring("Degree:".Length).Trim(), CultureInfo.InvariantCulture);
                     }
                     else
                     {
@@ -1103,31 +1118,31 @@ namespace FilmAnalysis
                         {
                             case "RawData":
                                 var parts = trimmed.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                                if (parts.Length >= 4 && double.TryParse(parts[0], out double dose))
+                                if (parts.Length >= 4 && double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out double dose))
                                 {
                                     rawDataPoints.Add(new CalibrationPoint
                                     {
                                         Dose = dose,
-                                        Red = double.Parse(parts[1]),
-                                        Green = double.Parse(parts[2]),
-                                        Blue = double.Parse(parts[3])
+                                        Red = double.Parse(parts[1], CultureInfo.InvariantCulture),
+                                        Green = double.Parse(parts[2], CultureInfo.InvariantCulture),
+                                        Blue = double.Parse(parts[3], CultureInfo.InvariantCulture)
                                     });
                                 }
                                 break;
                             case "FirstFit":
-                                newConfig.FirstFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(double.Parse).ToArray();
+                                newConfig.FirstFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
                                 break;
                             case "SecondFit":
-                                newConfig.SecondFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(double.Parse).ToArray();
+                                newConfig.SecondFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
                                 break;
                             case "ThirdFit":
-                                newConfig.ThirdFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(double.Parse).ToArray();
+                                newConfig.ThirdFit = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
                                 break;
                             case "DeltaOpt":
-                                newConfig.DeltaOpt = double.Parse(trimmed);
+                                newConfig.DeltaOpt = double.Parse(trimmed, CultureInfo.InvariantCulture);
                                 break;
                             case "RSquared":
-                                newConfig.RSquared = double.Parse(trimmed);
+                                newConfig.RSquared = double.Parse(trimmed, CultureInfo.InvariantCulture);
                                 break;
                         }
                     }
@@ -1538,7 +1553,7 @@ namespace FilmAnalysis
             UpdateCropUI();
             
             // Clean up alignment UI
-            ExitAlignMode_Click(null, null);
+            ExitAlignMode_Click(null!, null!);
 
             // Refresh display
             UpdateDisplayFromRaw();
@@ -2574,11 +2589,6 @@ namespace FilmAnalysis
 
             Dispatcher.BeginInvoke(new System.Action(() =>
             {
-                TopRulerCanvas.Children.Clear();
-                BottomRulerCanvas.Children.Clear();
-                LeftRulerCanvas.Children.Clear();
-                RightRulerCanvas.Children.Clear();
-
                 System.Windows.Rect bounds = GetRenderedImageBounds(MainDisplayImage);
                 if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
@@ -2589,6 +2599,9 @@ namespace FilmAnalysis
 
                 var rulerBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(200, 0, 0, 0));
                 var minorBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(120, 100, 100, 100));
+                var majorPen = new System.Windows.Media.Pen(rulerBrush, 1.2);
+                var minorPen = new System.Windows.Media.Pen(minorBrush, 0.6);
+                majorPen.Freeze(); minorPen.Freeze(); rulerBrush.Freeze(); minorBrush.Freeze();
 
                 double canvasW = TopRulerCanvas.ActualWidth;
                 double canvasH = LeftRulerCanvas.ActualHeight;
@@ -2598,54 +2611,107 @@ namespace FilmAnalysis
                 double centerX = canvasW / 2.0;
                 double centerY = canvasH / 2.0;
 
-                // --- 1. HORIZONTAL RULERS (Top & Bottom) ---
-                double topH = 30;
-                TopRulerCanvas.Children.Add(new System.Windows.Shapes.Line { X1 = 0, X2 = canvasW, Y1 = topH - 1, Y2 = topH - 1, Stroke = rulerBrush, StrokeThickness = 1 });
-                BottomRulerCanvas.Children.Add(new System.Windows.Shapes.Line { X1 = 0, X2 = canvasW, Y1 = 0.5, Y2 = 0.5, Stroke = rulerBrush, StrokeThickness = 1 });
-
-                for (double mm = -500; mm <= 500; mm += 1.0)
+                DrawRuler(TopRulerCanvas, canvasW, 30, dc =>
                 {
-                    double x = centerX + (mm * display_pixels_per_mm_X);
-                    if (x < 0 || x > canvasW) continue;
-
-                    bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
-                    bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
-                    bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
-
-                    TopRulerCanvas.Children.Add(new System.Windows.Shapes.Line { X1 = x, X2 = x, Stroke = isMajor ? rulerBrush : minorBrush, StrokeThickness = isMajor ? 1.2 : 0.6, Y1 = isMajor ? 0 : (isMid ? 15 : (isSmall ? 22 : 26)), Y2 = topH });
-                    BottomRulerCanvas.Children.Add(new System.Windows.Shapes.Line { X1 = x, X2 = x, Stroke = isMajor ? rulerBrush : minorBrush, StrokeThickness = isMajor ? 1.2 : 0.6, Y1 = 0, Y2 = isMajor ? 30 : (isMid ? 15 : (isSmall ? 8 : 4)) });
-
-                    if (isMajor)
+                    dc.DrawLine(new System.Windows.Media.Pen(rulerBrush, 1), new System.Windows.Point(0, 29), new System.Windows.Point(canvasW, 29));
+                    for (double mm = -500; mm <= 500; mm += 1.0)
                     {
-                        TopRulerCanvas.Children.Add(new System.Windows.Controls.TextBlock { Text = mm.ToString("0"), FontSize = 10, FontWeight = System.Windows.FontWeights.Bold, Foreground = rulerBrush, Margin = new System.Windows.Thickness(x + 2, 2, 0, 0) });
-                        BottomRulerCanvas.Children.Add(new System.Windows.Controls.TextBlock { Text = mm.ToString("0"), FontSize = 10, FontWeight = System.Windows.FontWeights.Bold, Foreground = rulerBrush, Margin = new System.Windows.Thickness(x + 2, 16, 0, 0) });
+                        double x = centerX + (mm * display_pixels_per_mm_X);
+                        if (x < 0 || x > canvasW) continue;
+                        bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
+                        bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
+                        bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
+                        double y1 = isMajor ? 0 : (isMid ? 15 : (isSmall ? 22 : 26));
+                        dc.DrawLine(isMajor ? majorPen : minorPen, new System.Windows.Point(x, y1), new System.Windows.Point(x, 30));
+                        if (isMajor)
+                        {
+                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, rulerBrush, 1.25);
+                            dc.DrawText(ft, new System.Windows.Point(x + 2, 2));
+                        }
                     }
-                }
+                });
 
-                // --- 2. VERTICAL RULERS (Left & Right) ---
-                double leftW = 40;
-                LeftRulerCanvas.Children.Add(new System.Windows.Shapes.Line { X1 = leftW - 1, X2 = leftW - 1, Y1 = 0, Y2 = canvasH, Stroke = rulerBrush, StrokeThickness = 1 });
-                RightRulerCanvas.Children.Add(new System.Windows.Shapes.Line { X1 = 0.5, X2 = 0.5, Y1 = 0, Y2 = canvasH, Stroke = rulerBrush, StrokeThickness = 1 });
-
-                for (double mm = -500; mm <= 500; mm += 1.0)
+                DrawRuler(BottomRulerCanvas, canvasW, 30, dc =>
                 {
-                    double y = centerY + (mm * display_pixels_per_mm_Y);
-                    if (y < 0 || y > canvasH) continue;
-
-                    bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
-                    bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
-                    bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
-
-                    LeftRulerCanvas.Children.Add(new System.Windows.Shapes.Line { Y1 = y, Y2 = y, Stroke = isMajor ? rulerBrush : minorBrush, StrokeThickness = isMajor ? 1.2 : 0.6, X1 = isMajor ? 0 : (isMid ? 20 : (isSmall ? 30 : 35)), X2 = leftW });
-                    RightRulerCanvas.Children.Add(new System.Windows.Shapes.Line { Y1 = y, Y2 = y, Stroke = isMajor ? rulerBrush : minorBrush, StrokeThickness = isMajor ? 1.2 : 0.6, X1 = 0, X2 = isMajor ? 40 : (isMid ? 20 : (isSmall ? 10 : 5)) });
-
-                    if (isMajor)
+                    dc.DrawLine(new System.Windows.Media.Pen(rulerBrush, 1), new System.Windows.Point(0, 0.5), new System.Windows.Point(canvasW, 0.5));
+                    for (double mm = -500; mm <= 500; mm += 1.0)
                     {
-                        LeftRulerCanvas.Children.Add(new System.Windows.Controls.TextBlock { Text = mm.ToString("0"), FontSize = 10, FontWeight = System.Windows.FontWeights.Bold, Foreground = rulerBrush, RenderTransform = new System.Windows.Media.RotateTransform(-90), Margin = new System.Windows.Thickness(2, y - 2, 0, 0) });
-                        RightRulerCanvas.Children.Add(new System.Windows.Controls.TextBlock { Text = mm.ToString("0"), FontSize = 10, FontWeight = System.Windows.FontWeights.Bold, Foreground = rulerBrush, RenderTransform = new System.Windows.Media.RotateTransform(-90), Margin = new System.Windows.Thickness(26, y - 2, 0, 0) });
+                        double x = centerX + (mm * display_pixels_per_mm_X);
+                        if (x < 0 || x > canvasW) continue;
+                        bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
+                        bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
+                        bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
+                        double y2 = isMajor ? 30 : (isMid ? 15 : (isSmall ? 8 : 4));
+                        dc.DrawLine(isMajor ? majorPen : minorPen, new System.Windows.Point(x, 0), new System.Windows.Point(x, y2));
+                        if (isMajor)
+                        {
+                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, rulerBrush, 1.25);
+                            dc.DrawText(ft, new System.Windows.Point(x + 2, 16));
+                        }
                     }
-                }
+                });
+
+                DrawRuler(LeftRulerCanvas, 40, canvasH, dc =>
+                {
+                    dc.DrawLine(new System.Windows.Media.Pen(rulerBrush, 1), new System.Windows.Point(39, 0), new System.Windows.Point(39, canvasH));
+                    for (double mm = -500; mm <= 500; mm += 1.0)
+                    {
+                        double y = centerY + (mm * display_pixels_per_mm_Y);
+                        if (y < 0 || y > canvasH) continue;
+                        bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
+                        bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
+                        bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
+                        double x1 = isMajor ? 0 : (isMid ? 20 : (isSmall ? 30 : 35));
+                        dc.DrawLine(isMajor ? majorPen : minorPen, new System.Windows.Point(x1, y), new System.Windows.Point(40, y));
+                        if (isMajor)
+                        {
+                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, rulerBrush, 1.25);
+                            dc.PushTransform(new System.Windows.Media.RotateTransform(-90, 10, y));
+                            dc.DrawText(ft, new System.Windows.Point(2, y - 2));
+                            dc.Pop();
+                        }
+                    }
+                });
+
+                DrawRuler(RightRulerCanvas, 40, canvasH, dc =>
+                {
+                    dc.DrawLine(new System.Windows.Media.Pen(rulerBrush, 1), new System.Windows.Point(0.5, 0), new System.Windows.Point(0.5, canvasH));
+                    for (double mm = -500; mm <= 500; mm += 1.0)
+                    {
+                        double y = centerY + (mm * display_pixels_per_mm_Y);
+                        if (y < 0 || y > canvasH) continue;
+                        bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
+                        bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
+                        bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
+                        double x2 = isMajor ? 40 : (isMid ? 20 : (isSmall ? 10 : 5));
+                        dc.DrawLine(isMajor ? majorPen : minorPen, new System.Windows.Point(0, y), new System.Windows.Point(x2, y));
+                        if (isMajor)
+                        {
+                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, rulerBrush, 1.25);
+                            dc.PushTransform(new System.Windows.Media.RotateTransform(-90, 30, y));
+                            dc.DrawText(ft, new System.Windows.Point(26, y - 2));
+                            dc.Pop();
+                        }
+                    }
+                });
             }), System.Windows.Threading.DispatcherPriority.Render);
+        }
+
+        private void DrawRuler(System.Windows.Controls.Canvas canvas, double width, double height, Action<System.Windows.Media.DrawingContext> drawAction)
+        {
+            canvas.Children.Clear();
+            int w = (int)Math.Max(1, Math.Ceiling(width));
+            int h = (int)Math.Max(1, Math.Ceiling(height));
+            var dv = new System.Windows.Media.DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                drawAction(dc);
+            }
+            var bmp = new RenderTargetBitmap(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            bmp.Render(dv);
+            bmp.Freeze();
+            var img = new System.Windows.Controls.Image { Source = bmp, Width = width, Height = height };
+            canvas.Children.Add(img);
         }
 
         private System.Windows.Rect GetRenderedImageBounds(System.Windows.Controls.Image img)
@@ -2714,12 +2780,17 @@ namespace FilmAnalysis
             {
                 int w = _imgWidth;
                 int h = _imgHeight;
-                _doseMap = new double[h, w];
+                var localDoseMap = new double[h, w];
                 _rawImageSource = MainDisplayImage.Source;
 
                 var config = CurrentConfig;
                 double delta = config.DeltaOpt;
                 string mode = config.Channel;
+
+                // Capture channels locally for thread safety
+                var red = _redChannel;
+                var green = _greenChannel;
+                var blue = _blueChannel;
 
                 await Task.Run(() =>
                 {
@@ -2727,11 +2798,12 @@ namespace FilmAnalysis
                     {
                         for (int x = 0; x < w; x++)
                         {
-                            _doseMap[y, x] = DoseCalculator.CalculateSinglePixelDose(_redChannel, _greenChannel, _blueChannel, x, y, mode, config, delta);
+                            localDoseMap[y, x] = DoseCalculator.CalculateSinglePixelDose(red, green, blue, x, y, mode, config, delta);
                         }
                     });
                 });
 
+                _doseMap = localDoseMap;
                 var heatmap = GenerateDoseHeatmap();
                 MainDisplayImage.Source = heatmap;
                 

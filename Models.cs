@@ -59,11 +59,11 @@ namespace FilmAnalysis
 
     internal class ImageState
     {
-        public double[,] Red, Green, Blue;
-        public double[,] DoseMap;
+        public double[,]? Red, Green, Blue;
+        public double[,]? DoseMap;
         public int Width, Height;
         public double DpiX, DpiY;
         public bool ShowingDose;
-        public string Description;
+        public string Description = "";
     }
 }

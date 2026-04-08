@@ -7,7 +7,7 @@ namespace FilmAnalysis
     /// </summary>
     public static class ImageTransforms
     {
-        public static double[,] CloneArray(double[,] src)
+        public static double[,]? CloneArray(double[,]? src)
         {
             if (src == null) return null;
             return (double[,])src.Clone();

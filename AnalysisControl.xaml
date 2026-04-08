@@ -194,12 +194,12 @@
             </Border>
 
             <!-- Bottom Right: Gamma Map -->
-            <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="2" Background="Transparent">
+            <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="2" Background="#15FFFFFF">
                 <Grid>
                     <Image x:Name="GammaImage" Stretch="Uniform" />
                     
                     <!-- Gamma Results Overlay (Top Left Header) -->
-                    <Border x:Name="GammaResultsOverlay" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5" Background="#BB000000" CornerRadius="4" Padding="10,2" Visibility="Collapsed">
+                    <Border x:Name="GammaResultsOverlay" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5" Background="#40FFFFFF" CornerRadius="4" Padding="10,2" Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="GAMMA PASS RATE: " Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
                             <TextBlock x:Name="OverlayPassRateText" Text="--" Foreground="White" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" Margin="5,0,10,0"/>

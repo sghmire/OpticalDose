@@ -51,6 +51,7 @@ namespace FilmAnalysis
         private List<StructureContour> _structures = new();
 
         private int _currentX, _currentY, _currentZ;
+        private int _maxDoseX, _maxDoseY, _maxDoseZ;
         private bool _isUpdatingSliders = false;
 
         public DicomControl()
@@ -209,8 +210,22 @@ namespace FilmAnalysis
                 }
             }
 
-            double maxVal = 0;
-            foreach (var v in _doseVolume) if (v > maxVal) maxVal = v;
+            double maxVal = -1;
+            _maxDoseX = _maxDoseY = _maxDoseZ = 0;
+            for (int f = 0; f < frames; f++)
+            {
+                for (int r = 0; r < rows; r++)
+                {
+                    for (int c = 0; c < cols; c++)
+                    {
+                        if (_doseVolume[f, r, c] > maxVal)
+                        {
+                            maxVal = _doseVolume[f, r, c];
+                            _maxDoseZ = f; _maxDoseY = r; _maxDoseX = c;
+                        }
+                    }
+                }
+            }
             MetaMaxDose.Text = $"{maxVal * _doseGridScaling * 100.0:F2} cGy";
 
             // 3. UI Setup
@@ -240,6 +255,7 @@ namespace FilmAnalysis
 
             ExtractPlaneButton.IsEnabled = true;
             ExportPlaneButton.IsEnabled = true;
+            GoToMaxDoseBtn.IsEnabled = true;
 
             UpdateAllViews();
         }
@@ -1028,6 +1044,24 @@ namespace FilmAnalysis
 
             UpdateAllViews();
             StatusText.Text = $"Navigated to {structure.Name} center ({structure.CenterX:F1}, {structure.CenterY:F1}, {structure.CenterZ:F1})";
+        }
+
+        private void GoToMaxDose_Click(object sender, RoutedEventArgs e)
+        {
+            if (_doseVolume == null) return;
+
+            _isUpdatingSliders = true;
+            ZSlider.Value = _maxDoseZ;
+            YSlider.Value = _maxDoseY;
+            XSlider.Value = _maxDoseX;
+            _isUpdatingSliders = false;
+
+            _currentX = (int)XSlider.Value;
+            _currentY = (int)YSlider.Value;
+            _currentZ = (int)ZSlider.Value;
+
+            UpdateAllViews();
+            StatusText.Text = $"Navigated to Maximum Dose location: ({XCoordInput.Value:F1}, {YCoordInput.Value:F1}, {ZCoordInput.Value:F1})";
         }
 
         private void StructureCombo_Changed(object sender, SelectionChangedEventArgs e) => DrawContours();

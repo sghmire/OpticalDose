@@ -37,12 +37,7 @@
                                FontWeight="SemiBold"
                                Click="LoadDicomSet_Click" />
                     
-                    <!-- Loaded file indicators -->
-                    <StackPanel Margin="0,8,0,0" Orientation="Vertical">
-                        <TextBlock x:Name="RdStatus" Text="● RD (Dose): Not loaded" FontSize="10" Foreground="#666" />
-                        <TextBlock x:Name="RsStatus" Text="● RS (Struct): Not loaded" FontSize="10" Foreground="#666" />
-                        <TextBlock x:Name="RpStatus" Text="● RP (Plan): Not loaded" FontSize="10" Foreground="#666" />
-                    </StackPanel>
+
                 </StackPanel>
 
                 <!-- Navigation Sliders -->
@@ -126,8 +121,16 @@
                             <TextBlock Text="Structures" Style="{StaticResource DosimetrySectionHeader}" VerticalAlignment="Center" />
                             <ui:ToggleSwitch x:Name="ShowContoursToggle" Content="Show All" HorizontalAlignment="Right" IsChecked="False" Click="ShowContours_Checked" />
                         </Grid>
-                        <ComboBox x:Name="StructureCombo" Width="300" DisplayMemberPath="Name" Margin="0,0,0,5" SelectionChanged="StructureCombo_Changed" />
-                        <ui:Button x:Name="GoToCenterBtn" Content="Go to Structure Center" Icon="{ui:SymbolIcon Location24}" Width="300" Height="36" Appearance="Primary" IsEnabled="False" Click="GoToCenter_Click" />
+                        <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="StructureCombo" DisplayMemberPath="Name" SelectionChanged="StructureCombo_Changed" HorizontalAlignment="Stretch" Margin="0,0,5,0" />
+                            <ui:Button x:Name="GoToCenterBtn" Grid.Column="1" Icon="{ui:SymbolIcon Location24}" Width="42" Height="36" Appearance="Primary" Padding="0" IsEnabled="False" Click="GoToCenter_Click" ToolTip="Go to Structure Center" Margin="0,0,5,0" />
+                            <ui:Button x:Name="GoToMaxDoseBtn" Grid.Column="2" Icon="{ui:SymbolIcon Star24}" Width="42" Height="36" Appearance="Secondary" Padding="0" IsEnabled="False" Click="GoToMaxDose_Click" ToolTip="Go to Maximum Dose Location" />
+                        </Grid>
                     </StackPanel>
                     
                     <!-- Extraction -->
@@ -139,8 +142,14 @@
                                 <ComboBoxItem Content="Coronal (Y)" Tag="Y" />
                                 <ComboBoxItem Content="Sagittal (X)" Tag="X" />
                             </ComboBox>
-                            <ui:Button x:Name="ExtractPlaneButton" Content="Extract Selected Plane" Icon="{ui:SymbolIcon TargetArrow24}" Width="300" Height="36" Appearance="Primary" IsEnabled="False" Click="ExtractSelectedPlane_Click" Margin="0,0,0,5" />
-                            <ui:Button x:Name="ExportPlaneButton" Content="Export Plane to .txt" Icon="{ui:SymbolIcon Save24}" Width="300" Height="36" Appearance="Secondary" IsEnabled="False" Click="ExportPlane_Click" />
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ui:Button x:Name="ExtractPlaneButton" Content="Extract Plane" Icon="{ui:SymbolIcon TargetArrow24}" Height="36" Appearance="Primary" IsEnabled="False" Click="ExtractSelectedPlane_Click" Margin="0,0,2.5,0" HorizontalAlignment="Stretch" FontSize="10" />
+                                <ui:Button x:Name="ExportPlaneButton" Content="Export .txt" Icon="{ui:SymbolIcon Save24}" Grid.Column="1" Height="36" Appearance="Secondary" IsEnabled="False" Click="ExportPlane_Click" Margin="2.5,0,0,0" HorizontalAlignment="Stretch" FontSize="10" />
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -196,9 +205,18 @@
                 </Border>
 
                 <!-- Bottom Right: Info Panel -->
-                <Border Grid.Row="1" Grid.Column="1" Margin="2">
+                <Border Grid.Row="1" Grid.Column="1" Margin="2" Background="#15FFFFFF" CornerRadius="4">
                     <Grid Background="Transparent">
                         <StackPanel VerticalAlignment="Top" Margin="12,8">
+                            <!-- Loaded file indicators -->
+                            <StackPanel Margin="0,0,0,8" Orientation="Vertical">
+                                <TextBlock x:Name="RdStatus" Text="● RD (Dose): Not loaded" FontSize="10" Foreground="#666" />
+                                <TextBlock x:Name="RsStatus" Text="● RS (Struct): Not loaded" FontSize="10" Foreground="#666" />
+                                <TextBlock x:Name="RpStatus" Text="● RP (Plan): Not loaded" FontSize="10" Foreground="#666" />
+                            </StackPanel>
+
+                            <Separator Margin="0,4,0,8" Background="{DynamicResource ControlElevationBorderBrush}" />
+
                             <!-- Grid Details -->
                             <TextBlock Text="Grid Details" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,3" />
                             <Grid x:Name="MetadataGrid">

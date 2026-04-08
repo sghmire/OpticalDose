@@ -15,11 +15,11 @@ namespace FilmAnalysis
 {
     public partial class AnalysisControl : UserControl
     {
-        private double[,] _filmDose;
-        private double[,] _planDose;
+        private double[,]? _filmDose;
+        private double[,]? _planDose;
         private double _filmDpiX, _filmDpiY;
         private double _planDpiX, _planDpiY;
-        private double[,] _gammaMap;
+        private double[,]? _gammaMap;
         private double _lastPassRate = double.NaN;
         
         // Physical Reference (DICOM center/Isocenter)
@@ -48,8 +48,8 @@ namespace FilmAnalysis
         // Film physical geometry
         private double _filmOriginX = 0, _filmOriginY = 0;
 
-        public event EventHandler AnalysisRequested;
-        public event EventHandler PlanRequested;
+        public event EventHandler? AnalysisRequested;
+        public event EventHandler? PlanRequested;
         
         public event Action<double>? ProgressUpdate;
         public event Action<bool>? ProgressActive;
@@ -157,7 +157,7 @@ namespace FilmAnalysis
                 for (int x = 0; x < w; x++)
                 {
                     double v = Math.Clamp(dose[y, x] / max, 0, 1);
-                    var (R, G, B) = GetJetColor(v);
+                    var (R, G, B) = ColorMaps.GetJetColor(v);
                     int idx = y * stride + x * 4;
                     pixels[idx] = B;
                     pixels[idx + 1] = G;
@@ -167,16 +167,6 @@ namespace FilmAnalysis
             });
 
             return BitmapSource.Create(w, h, dpiX, dpiY, PixelFormats.Bgra32, null, pixels, stride);
-        }
-
-        private (byte R, byte G, byte B) GetJetColor(double v)
-        {
-             double r = 0, g = 0, b = 0;
-            if (v < 0.25) { r = 0; g = 4 * v; b = 1; }
-            else if (v < 0.5) { r = 0; g = 1; b = 1 + 4 * (0.25 - v); }
-            else if (v < 0.75) { r = 4 * (v - 0.5); g = 1; b = 0; }
-            else { r = 1; g = 1 + 4 * (0.75 - v); b = 0; }
-            return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
         }
 
         private void UpdateProfiles()
@@ -320,7 +310,7 @@ namespace FilmAnalysis
             int ph = planDose.GetLength(0);
             int pw = planDose.GetLength(1);
 
-            _gammaMap = new double[fh, fw];
+            var gammaMap = new double[fh, fw];
 
             double filmSpacingX = 25.4 / _filmDpiX;
             double filmSpacingY = 25.4 / _filmDpiY;
@@ -345,7 +335,7 @@ namespace FilmAnalysis
                 for (int fx = 0; fx < fw; fx++)
                 {
                     double filmVal = filmDose[fy, fx];
-                    if (filmVal < threshVal) { _gammaMap[fy, fx] = double.NaN; continue; }
+                    if (filmVal < threshVal) { gammaMap[fy, fx] = double.NaN; continue; }
 
                     // Film physical position
                     double fmmX = fx * filmSpacingX + _filmOriginX + shiftX;
@@ -360,7 +350,7 @@ namespace FilmAnalysis
                     {
                         if (lpsX < _roiLpsMinX || lpsX > _roiLpsMaxX || lpsY < _roiLpsMinY || lpsY > _roiLpsMaxY)
                         {
-                            _gammaMap[fy, fx] = double.NaN;
+                            gammaMap[fy, fx] = double.NaN;
                             continue;
                         }
                     }
@@ -414,11 +404,13 @@ namespace FilmAnalysis
                             if (gammaSq < minGammaSq) minGammaSq = gammaSq;
                         }
                     }
-                    _gammaMap[fy, fx] = Math.Sqrt(minGammaSq);
+                    gammaMap[fy, fx] = Math.Sqrt(minGammaSq);
                 }
                 System.Threading.Interlocked.Increment(ref completedRows);
                 if (fy % 10 == 0) progress?.Report((double)completedRows / fh * 100);
             });
+
+            _gammaMap = gammaMap;
             progress?.Report(100);
         }
 
@@ -455,83 +447,14 @@ namespace FilmAnalysis
         {
             int ph = _planDose.GetLength(0);
             int pw = _planDose.GetLength(1);
-            return BicubicSample(_planDose, py, px, ph, pw);
+            return ImageFilters.BicubicSample(_planDose, py, px, ph, pw);
         }
 
-        private double[,] ApplyGaussianSmoothing(double[,] data, double sigmaMm, double dpi)
+        private static double[,] ApplyGaussianSmoothing(double[,] data, double sigmaMm, double dpi)
         {
-            int h = data.GetLength(0);
-            int w = data.GetLength(1);
             double pixelSigma = sigmaMm * (dpi / 25.4);
             if (pixelSigma < 0.1) return data;
-
-            int radius = (int)Math.Ceiling(pixelSigma * 3);
-            double[] kernel = new double[radius * 2 + 1];
-            double sum = 0;
-            for (int i = -radius; i <= radius; i++)
-            {
-                kernel[i + radius] = Math.Exp(-(i * i) / (2 * pixelSigma * pixelSigma));
-                sum += kernel[i + radius];
-            }
-            for (int i = 0; i < kernel.Length; i++) kernel[i] /= sum;
-
-            double[,] temp = new double[h, w];
-            double[,] result = new double[h, w];
-
-            // Horizontal pass
-            Parallel.For(0, h, y => {
-                for (int x = 0; x < w; x++) {
-                    double val = 0;
-                    for (int k = -radius; k <= radius; k++) {
-                        int cx = Math.Clamp(x + k, 0, w - 1);
-                        val += data[y, cx] * kernel[k + radius];
-                    }
-                    temp[y, x] = val;
-                }
-            });
-
-            // Vertical pass
-            Parallel.For(0, w, x => {
-                for (int y = 0; y < h; y++) {
-                    double val = 0;
-                    for (int k = -radius; k <= radius; k++) {
-                        int cy = Math.Clamp(y + k, 0, h - 1);
-                        val += temp[cy, x] * kernel[k + radius];
-                    }
-                    result[y, x] = val;
-                }
-            });
-
-            return result;
-        }
-
-        private static double BicubicSample(double[,] data, double row, double col, int h, int w)
-        {
-            int r0 = (int)Math.Floor(row);
-            int c0 = (int)Math.Floor(col);
-            double fr = row - r0, fc = col - c0;
-
-            double sum = 0;
-            for (int m = -1; m <= 2; m++)
-            {
-                double wr = CubicWeight(fr - m);
-                for (int n = -1; n <= 2; n++)
-                {
-                    double wc = CubicWeight(fc - n);
-                    int ri = Math.Clamp(r0 + m, 0, h - 1);
-                    int ci = Math.Clamp(c0 + n, 0, w - 1);
-                    sum += data[ri, ci] * wr * wc;
-                }
-            }
-            return sum;
-        }
-
-        private static double CubicWeight(double x)
-        {
-            x = Math.Abs(x);
-            if (x <= 1) return 1.5 * x * x * x - 2.5 * x * x + 1;
-            if (x < 2) return -0.5 * x * x * x + 2.5 * x * x - 4 * x + 2;
-            return 0;
+            return ImageFilters.GaussianFilter2D(data, pixelSigma);
         }
 
         private void DisplayGammaResults()
@@ -564,7 +487,7 @@ namespace FilmAnalysis
 
                     // Color: Jet Mapping (0.0 to 1.5)
                     double v = Math.Clamp(g / 1.5, 0, 1);
-                    var (R, G, B) = GetJetColor(v);
+                    var (R, G, B) = ColorMaps.GetJetColor(v);
                     pixels[idx] = B; 
                     pixels[idx + 1] = G; 
                     pixels[idx + 2] = R; 
@@ -575,7 +498,7 @@ namespace FilmAnalysis
             GammaImage.Source = BitmapSource.Create(fw, fh, _filmDpiX, _filmDpiY, PixelFormats.Bgra32, null, pixels, stride);
             GammaEmptyMsg.Visibility = Visibility.Collapsed;
 
-            double passRate = (double)passPoints / totalPoints * 100.0;
+            double passRate = totalPoints > 0 ? (double)passPoints / totalPoints * 100.0 : 0.0;
             _lastPassRate = passRate;
 
             OverlayPassRateText.Text = $"{passRate:F1} %";
@@ -1136,9 +1059,9 @@ namespace FilmAnalysis
         public string Mode { get; set; } = "Global";
         public double ShiftX { get; set; }
         public double ShiftY { get; set; }
-        public BitmapSource FilmImage { get; set; }
-        public BitmapSource PlanImage { get; set; }
-        public BitmapSource GammaImage { get; set; }
-        public BitmapSource ProfileImage { get; set; }
+        public required BitmapSource FilmImage { get; set; }
+        public required BitmapSource PlanImage { get; set; }
+        public required BitmapSource GammaImage { get; set; }
+        public required BitmapSource ProfileImage { get; set; }
     }
 }
