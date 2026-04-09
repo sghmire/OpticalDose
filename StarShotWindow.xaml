@@ -84,11 +84,17 @@
                     <TextBlock Text="Results" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
                     <ui:Card Padding="15" Margin="0,0,0,20">
                         <StackPanel>
-                            <Grid Margin="0,0,0,8">
+                            <Grid Margin="0,0,0,4">
                                 <TextBlock Text="Isocenter Diameter:" VerticalAlignment="Center" FontSize="12" />
                                 <TextBlock x:Name="IsoDiameterText" Text="--- mm"
                                            HorizontalAlignment="Right" FontWeight="Bold" FontSize="15"
                                            Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                            </Grid>
+                            <Grid Margin="0,0,0,8">
+                                <TextBlock Text="Isocenter Offset:" VerticalAlignment="Center" FontSize="12" />
+                                <TextBlock x:Name="OffsetMmText" Text="--- mm"
+                                           HorizontalAlignment="Right" FontWeight="Bold" FontSize="15"
+                                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
                             </Grid>
                             <Separator Margin="0,4,0,8" />
                             <TextBlock x:Name="ResultSummaryText"

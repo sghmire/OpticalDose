@@ -259,9 +259,6 @@ namespace FilmQA
                 if (gap <= 0) gap += 360;
                 if (gap < minGapDeg) minGapDeg = gap;
             }
-            double searchHalfPx = R * Math.Sin(minGapDeg / 2.0 * Math.PI / 180.0) * 0.40;
-            searchHalfPx = Math.Max(searchHalfPx, 8);
-
             var spokes = new List<SpokeLine>();
             // For the profile plot, collect one representative angle per beam
             var beamAngles = new List<double>();
@@ -269,7 +266,7 @@ namespace FilmQA
             foreach (var beam in beams)
             {
                 var line = FitBeamCenterline(
-                    cx, cy, beam.angle1, beam.angle2, R, searchHalfPx, isInverted);
+                    cx, cy, beam.angle1, beam.angle2, R, minGapDeg, isInverted);
                 spokes.Add(line);
                 beamAngles.Add(beam.angle1);
             }
@@ -279,11 +276,15 @@ namespace FilmQA
             double diameterMm  = radiusMm * 2;
             double isoPxRadius = radiusMm / _mmPerPixel;
 
+            double dx = isoX - cx;
+            double dy = isoY - cy;
+            double offsetMm = Math.Sqrt(dx * dx + dy * dy) * _mmPerPixel;
+
             _lastSpokes      = spokes;
             _lastIsocenter   = new Point(isoX, isoY);
             _lastIsoPxRadius = isoPxRadius;
 
-            UpdateResultsUI(diameterMm, spokes.Count, _lastIsocenter);
+            UpdateResultsUI(diameterMm, offsetMm, spokes.Count, _lastIsocenter);
             DrawOverlays(spokes, _lastIsocenter, isoPxRadius);
             PlotProfile(profile, isInverted, beamAngles, thresholdPct);
         }
@@ -344,6 +345,33 @@ namespace FilmQA
             for (int i = 0; i < N; i++)
                 for (int k = -hw; k <= hw; k++)
                     result[i] += data[((i + k) % N + N) % N] * kernel[k + hw];
+            return result;
+        }
+
+        private static double[] GaussianSmoothLinear(double[] data, int sigma)
+        {
+            int N = data.Length;
+            int hw = sigma * 3;
+            if (hw == 0) return data.ToArray();
+            var kernel = new double[2 * hw + 1];
+            for (int k = -hw; k <= hw; k++)
+                kernel[k + hw] = Math.Exp(-0.5 * k * k / (sigma * sigma));
+
+            var result = new double[N];
+            for (int i = 0; i < N; i++)
+            {
+                double sum = 0, w = 0;
+                for (int k = -hw; k <= hw; k++)
+                {
+                    int idx = i + k;
+                    if (idx >= 0 && idx < N)
+                    {
+                        sum += data[idx] * kernel[k + hw];
+                        w += kernel[k + hw];
+                    }
+                }
+                result[i] = sum / w;
+            }
             return result;
         }
 
@@ -475,7 +503,7 @@ namespace FilmQA
         /// </summary>
         private SpokeLine FitBeamCenterline(
             int cx, int cy, double angle1Deg, double angle2Deg,
-            double R, double searchHalfPx, bool isInverted)
+            double R, double minGapDeg, bool isInverted)
         {
             const int nRadiiPerSide = 30;
             const int nPerp = 100;
@@ -492,14 +520,20 @@ namespace FilmQA
 
                 for (int ri = 1; ri <= nRadiiPerSide; ri++)
                 {
-                    double r   = R * (0.20 + 0.70 * ri / nRadiiPerSide);
+                    // Start further out (0.40) to prevent tracking into the physical central cross-over blob!
+                    double r   = R * (0.40 + 0.60 * ri / nRadiiPerSide);
+
+                    // Dynamic search width! Narrower near center to completely avoid adjacent beams!
+                    double maxSafeHalfPx = Math.Max(r * Math.Sin(minGapDeg / 2.0 * Math.PI / 180.0) * 0.60, 2.0);
+                    double localSearchHalfPx = Math.Min(maxSafeHalfPx, R * 0.15); // Cap to 15% of R
+
                     double px0 = cx + r * cosA;
                     double py0 = cy + r * sinA;
 
                     var vals = new double[2 * nPerp + 1];
                     for (int k = -nPerp; k <= nPerp; k++)
                     {
-                        double t = k * searchHalfPx / nPerp;
+                        double t = k * localSearchHalfPx / nPerp;
                         vals[k + nPerp] = BilinearSample(
                             px0 + t * cosP, py0 + t * sinP);
                     }
@@ -508,15 +542,34 @@ namespace FilmQA
                         for (int k = 0; k < vals.Length; k++)
                             vals[k] = -vals[k];
 
+                    // 3-tap Median Filter for extreme salt & pepper noise before Gaussian smooth
+                    double[] valsMedian = new double[vals.Length];
+                    for (int k = 0; k < vals.Length; k++)
+                    {
+                        int left = Math.Max(0, k - 1);
+                        int right = Math.Min(vals.Length - 1, k + 1);
+                        double a = vals[left], b = vals[k], c = vals[right];
+                        valsMedian[k] = Math.Max(Math.Min(a, b), Math.Min(Math.Max(a, b), c));
+                    }
+                    vals = valsMedian;
+
+                    vals = GaussianSmoothLinear(vals, 1);
+
                     double vMin = vals.Min();
+                    double vMax = vals.Max();
+                    double thresh = vMin + (vMax - vMin) * 0.50; // Strict FWHM Thresholding
+
                     double wSum = 0, tSum = 0;
                     for (int k = 0; k < vals.Length; k++)
                     {
-                        double w = Math.Max(vals[k] - vMin, 0);
-                        w *= w;
-                        double t = (k - nPerp) * searchHalfPx / nPerp;
-                        tSum += w * t;
-                        wSum += w;
+                        if (vals[k] >= thresh)
+                        {
+                            double w = vals[k] - thresh; 
+                            w *= w;
+                            double t = (k - nPerp) * localSearchHalfPx / nPerp;
+                            tSum += w * t;
+                            wSum += w;
+                        }
                     }
                     if (wSum < 1e-12) continue;
 
@@ -721,13 +774,15 @@ namespace FilmQA
         // ════════════════════════════════════════════════════════════════════════════
         //  UI  (results, overlays, plot)
         // ════════════════════════════════════════════════════════════════════════════
-        private void UpdateResultsUI(double diameterMm, int nSpokes, Point iso)
+        private void UpdateResultsUI(double diameterMm, double offsetMm, int nSpokes, Point iso)
         {
             IsoDiameterText.Text = $"{diameterMm:F3} mm";
+            OffsetMmText.Text = $"{offsetMm:F3} mm";
             var sb = new StringBuilder();
             sb.AppendLine($"Spokes detected:  {nSpokes}");
             sb.AppendLine($"Isocenter:  ({iso.X:F1}, {iso.Y:F1}) px");
             sb.AppendLine($"Diameter:   {diameterMm:F3} mm");
+            sb.AppendLine($"Target Offset: {offsetMm:F3} mm");
             ResultSummaryText.Text = sb.ToString();
         }
 

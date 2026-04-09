@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:scott="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
-        Title="Field size Analysis (FWHM)" Height="850" Width="1100"
+        Title="Field size Analysis (FWHM) &amp; Alignment" Height="950" Width="1200"
         Icon="/Icon.png"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource ApplicationBackgroundBrush}"
@@ -21,8 +21,56 @@
         <Border Grid.Column="0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="0,0,1,0" Padding="0,0,15,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <TextBlock Text="Field size Parameters" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,15" />
                     
+                    <TextBlock Text="Alignment Parameters" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,15" />
+                    <ui:Card Padding="12" Margin="0,0,0,20">
+                        <StackPanel>
+                            <TextBlock Text="Nominal Field Size" FontWeight="Bold" Margin="0,0,0,10" />
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                    <TextBlock Text="Width (mm)" FontSize="10" Margin="0,0,0,4"/>
+                                    <ui:TextBox x:Name="TargetSizeXBox" Text="50" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Height (mm)" FontSize="10" Margin="0,0,0,4"/>
+                                    <ui:TextBox x:Name="TargetSizeYBox" Text="50" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Grid>
+                            
+                            <ui:Button Content="Apply Reticle Size" Icon="{ui:SymbolIcon Square24}" Appearance="Secondary" HorizontalAlignment="Stretch" Height="36" Click="ApplyReticleSize_Click" Margin="0,0,0,10" />
+                            
+                            <Grid HorizontalAlignment="Center" Margin="0,5,0,5">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <ui:Button Grid.Row="0" Grid.Column="0" Content="CCW" Icon="{ui:SymbolIcon ArrowCounterclockwise24}" Width="60" Height="32" Click="DPadRotateCCW_Click" ToolTip="Rotate -0.5 deg" Margin="2"/>
+                                <ui:Button Grid.Row="0" Grid.Column="1" Icon="{ui:SymbolIcon ArrowUp24}" Width="60" Height="32" Click="DPadUp_Click" Margin="2"/>
+                                <ui:Button Grid.Row="0" Grid.Column="2" Content="CW" Icon="{ui:SymbolIcon ArrowClockwise24}" Width="60" Height="32" Click="DPadRotateCW_Click" ToolTip="Rotate +0.5 deg" Margin="2"/>
+                                
+                                <ui:Button Grid.Row="1" Grid.Column="0" Icon="{ui:SymbolIcon ArrowLeft24}" Width="60" Height="32" Click="DPadLeft_Click" Margin="2"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="Nudge" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                <ui:Button Grid.Row="1" Grid.Column="2" Icon="{ui:SymbolIcon ArrowRight24}" Width="60" Height="32" Click="DPadRight_Click" Margin="2"/>
+                                
+                                <ui:Button Grid.Row="2" Grid.Column="1" Icon="{ui:SymbolIcon ArrowDown24}" Width="60" Height="32" Click="DPadDown_Click" Margin="2"/>
+                            </Grid>
+
+                            <TextBlock Text="You may also drag the box on the right. Hit Recalculate Analysis when perfectly aligned!" FontStyle="Italic" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                        </StackPanel>
+                    </ui:Card>
+
+                    <TextBlock Text="Field size Parameters" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,15" />
                     <ui:Card Padding="12" Margin="0,0,0,20">
                         <StackPanel>
                             <TextBlock Text="Analysis Area" FontWeight="Bold" Margin="0,0,0,10" />
@@ -85,27 +133,71 @@
         <!-- Main Content Area: Plots -->
         <Grid Grid.Column="1" Margin="15,0,0,0">
             <Grid.RowDefinitions>
-                <RowDefinition Height="*" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="1.1*" />
+                <RowDefinition Height="0.9*" />
             </Grid.RowDefinitions>
 
-            <!-- X-Profile Plot -->
+            <!-- 2D Image View with Draggable overlay -->
             <Border Grid.Row="0" Margin="0,0,0,8" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="5" Background="{DynamicResource ControlFillColorDefaultBrush}">
-                <Grid>
-                    <scott:WpfPlot x:Name="XPlot" />
-                    <TextBlock Text="X-AXIS DOSIMETRY PROFILE" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,8,12,0" 
+                <Grid x:Name="ImageBoxGrid" ClipToBounds="True">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    
+                    <Viewbox Stretch="Uniform">
+                         <Grid x:Name="AlignGrid">
+                            <Image x:Name="FilmImage" Stretch="Fill" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+                            <Canvas x:Name="OverlayCanvas" Background="Transparent" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                    Width="{Binding Width, ElementName=FilmImage}" 
+                                    Height="{Binding Height, ElementName=FilmImage}"
+                                    MouseDown="OverlayCanvas_MouseDown" 
+                                    MouseMove="OverlayCanvas_MouseMove" 
+                                    MouseUp="OverlayCanvas_MouseUp" 
+                                    Focusable="True"
+                                    KeyDown="OverlayCanvas_KeyDown">
+                                <!-- Draggable target box -->
+                                <Rectangle x:Name="TargetRect" RenderTransformOrigin="0.5,0.5" Stroke="White" StrokeThickness="1" Fill="#44FF0000" Visibility="Hidden" IsHitTestVisible="False">
+                                    <Rectangle.RenderTransform>
+                                        <RotateTransform x:Name="TargetRotation" Angle="0"/>
+                                    </Rectangle.RenderTransform>
+                                </Rectangle>
+                                
+                                <!-- Center crosshair point -->
+                                <Ellipse x:Name="TargetCenter" Width="6" Height="6" Fill="Red" Visibility="Hidden" IsHitTestVisible="False" Margin="-3,-3,0,0"/>
+                            </Canvas>
+                         </Grid>
+                    </Viewbox>
+                    
+                    <TextBlock Text="ALIGNMENT / DOSE MAP" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,8,12,0" 
                                FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
                 </Grid>
             </Border>
 
-            <!-- Y-Profile Plot -->
-            <Border Grid.Row="1" Margin="0,8,0,0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="5" Background="{DynamicResource ControlFillColorDefaultBrush}">
-                <Grid>
-                    <scott:WpfPlot x:Name="YPlot" />
-                    <TextBlock Text="Y-AXIS DOSIMETRY PROFILE" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,8,12,0" 
-                               FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
-                </Grid>
-            </Border>
+            <!-- Plots Grid -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- X-Profile Plot -->
+                <Border Grid.Column="0" Margin="0,0,4,0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="5" Background="{DynamicResource ControlFillColorDefaultBrush}">
+                    <Grid>
+                        <scott:WpfPlot x:Name="XPlot" />
+                        <TextBlock Text="X-AXIS DOSIMETRY PROFILE" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,8,12,0" 
+                                   FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                    </Grid>
+                </Border>
+
+                <!-- Y-Profile Plot -->
+                <Border Grid.Column="1" Margin="4,0,0,0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="5" Background="{DynamicResource ControlFillColorDefaultBrush}">
+                    <Grid>
+                        <scott:WpfPlot x:Name="YPlot" />
+                        <TextBlock Text="Y-AXIS DOSIMETRY PROFILE" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,8,12,0" 
+                                   FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
 </ui:FluentWindow>

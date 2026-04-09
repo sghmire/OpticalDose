@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using Colors = ScottPlot.Colors;
 using Wpf.Ui.Controls;
 using System.Windows.Media;
+using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Documents;
 using System.Printing;
@@ -27,7 +28,15 @@ namespace FilmQA
         private string _lastMethod = "Maximum";
         private double _lastPlateauX, _lastPlateauY;
 
-        public FieldSizeWindow(double[,] doseMap, double dpi, AppSettings settings)
+        // Alignment Dragging State
+        private Point? _customCenterPixel = null;
+        private double _customRotationAngle = 0.0;
+        private bool _isDragging = false;
+        private Point _dragStartPoint;
+        private double _rectStartLeft;
+        private double _rectStartTop;
+
+        public FieldSizeWindow(double[,] doseMap, double dpi, AppSettings settings, BitmapSource imageSource = null)
         {
             InitializeComponent();
             _doseMap = doseMap ?? throw new ArgumentNullException(nameof(doseMap));
@@ -35,6 +44,13 @@ namespace FilmQA
             _settings = settings;
             _mmPerPixelX = 25.4 / _dpi;
             _mmPerPixelY = 25.4 / _dpi;
+
+            if (imageSource != null)
+            {
+                FilmImage.Source = imageSource;
+                FilmImage.Width = doseMap.GetLength(1);
+                FilmImage.Height = doseMap.GetLength(0);
+            }
 
             // Load last settings
             PlateauXBox.Text = _settings.LastPlateauX.ToString();
@@ -47,7 +63,152 @@ namespace FilmQA
                     break;
                 }
             }
-            StatusText.Text = "Ready";
+            StatusText.Text = "Ready. Set Target Box above to align.";
+            
+            // Auto click apply reticle to start immediately if default 50x50 is ok
+            ApplyReticleSize_Click(null, null);
+        }
+
+        private void ApplyReticleSize_Click(object sender, RoutedEventArgs e)
+        {
+            if (!double.TryParse(TargetSizeXBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double tX)) tX = 50;
+            if (!double.TryParse(TargetSizeYBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double tY)) tY = 50;
+
+            double pxWidth = tX / _mmPerPixelX;
+            double pxHeight = tY / _mmPerPixelY;
+
+            TargetRect.Width = pxWidth;
+            TargetRect.Height = pxHeight;
+
+            int w = _doseMap.GetLength(1);
+            int h = _doseMap.GetLength(0);
+
+            if (TargetRect.Visibility != Visibility.Visible)
+            {
+                TargetRect.Visibility = Visibility.Visible;
+                TargetCenter.Visibility = Visibility.Visible;
+                // Center it initially
+                Canvas.SetLeft(TargetRect, (w - pxWidth) / 2.0);
+                Canvas.SetTop(TargetRect, (h - pxHeight) / 2.0);
+            }
+
+            UpdateCenterFromRect();
+            OverlayCanvas.Focus(); // So keyboard shortcuts work
+        }
+
+        private void DPadUp_Click(object sender, RoutedEventArgs e) => NudgeRect(0, -1);
+        private void DPadDown_Click(object sender, RoutedEventArgs e) => NudgeRect(0, 1);
+        private void DPadLeft_Click(object sender, RoutedEventArgs e) => NudgeRect(-1, 0);
+        private void DPadRight_Click(object sender, RoutedEventArgs e) => NudgeRect(1, 0);
+
+        private void DPadRotateCW_Click(object sender, RoutedEventArgs e)
+        {
+            if (TargetRect.Visibility != Visibility.Visible) return;
+            TargetRotation.Angle += 0.5;
+            _customRotationAngle = TargetRotation.Angle;
+        }
+
+        private void DPadRotateCCW_Click(object sender, RoutedEventArgs e)
+        {
+            if (TargetRect.Visibility != Visibility.Visible) return;
+            TargetRotation.Angle -= 0.5;
+            _customRotationAngle = TargetRotation.Angle;
+        }
+
+        private void NudgeRect(double dx, double dy)
+        {
+            if (TargetRect.Visibility != Visibility.Visible) return;
+            double left = Canvas.GetLeft(TargetRect);
+            double top = Canvas.GetTop(TargetRect);
+            if (double.IsNaN(left)) left = 0;
+            if (double.IsNaN(top)) top = 0;
+            Canvas.SetLeft(TargetRect, left + dx);
+            Canvas.SetTop(TargetRect, top + dy);
+            UpdateCenterFromRect();
+        }
+
+        private void UpdateCenterFromRect()
+        {
+            double left = Canvas.GetLeft(TargetRect);
+            if (double.IsNaN(left)) left = 0;
+            double top = Canvas.GetTop(TargetRect);
+            if (double.IsNaN(top)) top = 0;
+
+            double cx = left + TargetRect.Width / 2.0;
+            double cy = top + TargetRect.Height / 2.0;
+
+            _customCenterPixel = new Point(cx, cy);
+
+            Canvas.SetLeft(TargetCenter, cx);
+            Canvas.SetTop(TargetCenter, cy);
+        }
+
+        private void OverlayCanvas_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (TargetRect.Visibility != Visibility.Visible) return;
+            
+            Point pt = e.GetPosition(OverlayCanvas);
+            double left = Canvas.GetLeft(TargetRect);
+            double top = Canvas.GetTop(TargetRect);
+            
+            // simple bounding box hit test for the entire rectangle to make dragging easy
+            if (pt.X >= left && pt.X <= left + TargetRect.Width &&
+                pt.Y >= top && pt.Y <= top + TargetRect.Height)
+            {
+                _isDragging = true;
+                _dragStartPoint = pt;
+                _rectStartLeft = left;
+                _rectStartTop = top;
+                OverlayCanvas.CaptureMouse();
+                OverlayCanvas.Focus();
+                e.Handled = true;
+            }
+        }
+
+        private void OverlayCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_isDragging)
+            {
+                Point currentPt = e.GetPosition(OverlayCanvas);
+                double offsetX = currentPt.X - _dragStartPoint.X;
+                double offsetY = currentPt.Y - _dragStartPoint.Y;
+
+                Canvas.SetLeft(TargetRect, _rectStartLeft + offsetX);
+                Canvas.SetTop(TargetRect, _rectStartTop + offsetY);
+
+                UpdateCenterFromRect();
+            }
+        }
+
+        private void OverlayCanvas_MouseUp(object sender, MouseButtonEventArgs e)
+        {
+            if (_isDragging)
+            {
+                _isDragging = false;
+                OverlayCanvas.ReleaseMouseCapture();
+            }
+        }
+
+        private void OverlayCanvas_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (TargetRect.Visibility != Visibility.Visible) return;
+
+            double left = Canvas.GetLeft(TargetRect);
+            double top = Canvas.GetTop(TargetRect);
+
+            double nudge = 1.0;
+            bool handled = false;
+
+            if (e.Key == Key.Up) { Canvas.SetTop(TargetRect, top - nudge); handled = true; }
+            else if (e.Key == Key.Down) { Canvas.SetTop(TargetRect, top + nudge); handled = true; }
+            else if (e.Key == Key.Left) { Canvas.SetLeft(TargetRect, left - nudge); handled = true; }
+            else if (e.Key == Key.Right) { Canvas.SetLeft(TargetRect, left + nudge); handled = true; }
+
+            if (handled)
+            {
+                UpdateCenterFromRect();
+                e.Handled = true;
+            }
         }
 
         private void CalcButton_Click(object sender, RoutedEventArgs e)
@@ -69,12 +230,39 @@ namespace FilmQA
             try
             {
                 ComputeAndPlot(plateauX, plateauY, method);
-                StatusText.Text = "Calculated";
+                if (StatusText != null) StatusText.Text = "Calculated Center/Rot: " + (_customCenterPixel.HasValue ? $"({_customCenterPixel.Value.X:F0}, {_customCenterPixel.Value.Y:F0}) @ {_customRotationAngle:F1}°" : "Auto");
             }
             catch (Exception ex)
             {
-                StatusText.Text = $"Error: {ex.Message}";
+                if (StatusText != null) StatusText.Text = $"Error: {ex.Message}";
             }
+        }
+
+        private static double InterpolateBilinear(double[,] map, double x, double y)
+        {
+            int w = map.GetLength(1);
+            int h = map.GetLength(0);
+
+            if (x < 0 || x >= w - 1 || y < 0 || y >= h - 1)
+                return 0; // Out of bounds returns 0 dose
+
+            int x0 = (int)x;
+            int y0 = (int)y;
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+
+            double dx = x - x0;
+            double dy = y - y0;
+
+            double c00 = map[y0, x0];
+            double c10 = map[y0, x1];
+            double c01 = map[y1, x0];
+            double c11 = map[y1, x1];
+
+            return c00 * (1 - dx) * (1 - dy) +
+                   c10 * dx * (1 - dy) +
+                   c01 * (1 - dx) * dy +
+                   c11 * dx * dy;
         }
 
         private void ComputeAndPlot(double plateauX, double plateauY, string method)
@@ -82,103 +270,117 @@ namespace FilmQA
             int h = _doseMap.GetLength(0);
             int w = _doseMap.GetLength(1);
 
-            // Coordinate vectors centered at 0 mm
-            double[] xCoords = Enumerable.Range(0, w).Select(i => (i - (w - 1) / 2.0) * _mmPerPixelX).ToArray();
-            double[] yCoords = Enumerable.Range(0, h).Select(i => (i - (h - 1) / 2.0) * _mmPerPixelY).ToArray();
+            double pixelCenterX = _customCenterPixel.HasValue ? _customCenterPixel.Value.X : (w - 1) / 2.0;
+            double pixelCenterY = _customCenterPixel.HasValue ? _customCenterPixel.Value.Y : (h - 1) / 2.0;
 
-            int centerXIdx = Array.IndexOf(xCoords.Select(v => Math.Abs(v)).ToArray(), xCoords.Select(v => Math.Abs(v)).Min());
-            int centerYIdx = Array.IndexOf(yCoords.Select(v => Math.Abs(v)).ToArray(), yCoords.Select(v => Math.Abs(v)).Min());
+            double angleRad = _customRotationAngle * Math.PI / 180.0;
+            double cosA = Math.Cos(angleRad);
+            double sinA = Math.Sin(angleRad);
 
-            double centerX = xCoords[centerXIdx];
-            double centerY = yCoords[centerYIdx];
+            double stepX = _mmPerPixelX;
+            double stepY = _mmPerPixelY;
+            
+            // X profiles span width 'w' physically, yielding 'w' points.
+            int numPointsX = w;
+            int numProfilesX = plateauY <= 0 ? 1 : Math.Max(1, (int)(plateauY / stepY) + 1);
 
-            // rows for X profiles use plateauY; cols for Y profiles use plateauX
-            var validRowIdx = Enumerable.Range(0, h)
-                .Where(r => yCoords[r] >= centerY - plateauY / 2.0 && yCoords[r] <= centerY + plateauY / 2.0)
-                .ToArray();
-            var validColIdx = Enumerable.Range(0, w)
-                .Where(c => xCoords[c] >= centerX - plateauX / 2.0 && xCoords[c] <= centerX + plateauX / 2.0)
-                .ToArray();
+            double[][] xProfiles = new double[numProfilesX][];
+            var leftX = new double[numProfilesX];
+            var rightX = new double[numProfilesX];
+            double[] xCoords = Enumerable.Range(0, numPointsX).Select(j => (j - (numPointsX - 1) / 2.0) * stepX).ToArray();
 
-            if (validRowIdx.Length == 0) validRowIdx = Enumerable.Range(0, h).ToArray();
-            if (validColIdx.Length == 0) validColIdx = Enumerable.Range(0, w).ToArray();
-
-            var leftX = new double[validRowIdx.Length];
-            var rightX = new double[validRowIdx.Length];
-            var leftY = new double[validColIdx.Length];
-            var rightY = new double[validColIdx.Length];
-
-            double[][] xProfiles = new double[validRowIdx.Length][];
-            double[][] yProfiles = new double[validColIdx.Length][];
-
-            // X profiles (rows)
-            for (int i = 0; i < validRowIdx.Length; i++)
+            for(int i = 0; i < numProfilesX; i++)
             {
-                int r = validRowIdx[i];
-                var profile = new double[w];
-                for (int c = 0; c < w; c++) profile[c] = _doseMap[r, c];
+                double yOffsetPhys = numProfilesX == 1 ? 0 : -plateauY / 2.0 + i * (plateauY / (numProfilesX - 1));
+                var profile = new double[numPointsX];
+                
+                for(int j = 0; j < numPointsX; j++)
+                {
+                    double xOffsetPhys = xCoords[j];
+                    double physX = xOffsetPhys * cosA - yOffsetPhys * sinA;
+                    double physY = xOffsetPhys * sinA + yOffsetPhys * cosA;
+
+                    double px = pixelCenterX + physX / stepX;
+                    double py = pixelCenterY + physY / stepY;
+
+                    profile[j] = InterpolateBilinear(_doseMap, px, py);
+                }
                 xProfiles[i] = profile;
 
-                double[] plateauSlice = GetPlateauSlice(profile, xCoords, plateauX, centerX);
+                double[] plateauSlice = GetPlateauSlice(profile, xCoords, plateauX, 0.0);
                 double peak = SelectPeak(plateauSlice, method);
                 double threshold = peak / 2.0;
 
                 int maxIdx = Array.IndexOf(profile, profile.Max());
-                int idxLeft = Array.FindIndex(profile, v => v >= threshold);
-                leftX[i] = (idxLeft <= 0) ? xCoords[0] : InterpolateEdge(profile, xCoords, idxLeft - 1, idxLeft, threshold);
+                
+                int idxL = maxIdx;
+                while (idxL > 0 && profile[idxL - 1] >= threshold) idxL--;
+                leftX[i] = (idxL <= 0) ? xCoords[0] : InterpolateEdge(profile, xCoords, idxL - 1, idxL, threshold);
 
-                int idxRightRel = Array.FindIndex(profile.Skip(maxIdx).ToArray(), v => v < threshold);
-                if (idxRightRel < 0)
-                    rightX[i] = xCoords[^1];
-                else
-                {
-                    int g2 = maxIdx + idxRightRel;
-                    int g1 = Math.Max(0, g2 - 1);
-                    rightX[i] = InterpolateEdge(profile, xCoords, g1, g2, threshold);
-                }
+                int idxR = maxIdx;
+                while (idxR < profile.Length - 1 && profile[idxR + 1] >= threshold) idxR++;
+                rightX[i] = (idxR >= profile.Length - 1) ? xCoords[^1] : InterpolateEdge(profile, xCoords, idxR, idxR + 1, threshold);
             }
 
-            // Y profiles (columns)
-            for (int j = 0; j < validColIdx.Length; j++)
-            {
-                int c = validColIdx[j];
-                var profile = new double[h];
-                for (int r = 0; r < h; r++) profile[r] = _doseMap[r, c];
-                yProfiles[j] = profile;
+            // Y profiles
+            int numPointsY = h;
+            int numProfilesY = plateauX <= 0 ? 1 : Math.Max(1, (int)(plateauX / stepX) + 1);
 
-                double[] plateauSlice = GetPlateauSlice(profile, yCoords, plateauY, centerY);
+            double[][] yProfiles = new double[numProfilesY][];
+            var leftY = new double[numProfilesY];
+            var rightY = new double[numProfilesY];
+            double[] yCoords = Enumerable.Range(0, numPointsY).Select(j => (j - (numPointsY - 1) / 2.0) * stepY).ToArray();
+
+            for(int i = 0; i < numProfilesY; i++)
+            {
+                double xOffsetPhys = numProfilesY == 1 ? 0 : -plateauX / 2.0 + i * (plateauX / (numProfilesY - 1));
+                var profile = new double[numPointsY];
+                
+                for(int j = 0; j < numPointsY; j++)
+                {
+                    double yOffsetPhys = yCoords[j];
+                    double physX = xOffsetPhys * cosA - yOffsetPhys * sinA;
+                    double physY = xOffsetPhys * sinA + yOffsetPhys * cosA;
+
+                    double px = pixelCenterX + physX / stepX;
+                    double py = pixelCenterY + physY / stepY;
+
+                    profile[j] = InterpolateBilinear(_doseMap, px, py);
+                }
+                yProfiles[i] = profile;
+
+                double[] plateauSlice = GetPlateauSlice(profile, yCoords, plateauY, 0.0);
                 double peak = SelectPeak(plateauSlice, method);
                 double threshold = peak / 2.0;
 
                 int maxIdx = Array.IndexOf(profile, profile.Max());
-                int idxLeft = Array.FindIndex(profile, v => v >= threshold);
-                leftY[j] = (idxLeft <= 0) ? yCoords[0] : InterpolateEdge(profile, yCoords, idxLeft - 1, idxLeft, threshold);
+                
+                int idxL = maxIdx;
+                while (idxL > 0 && profile[idxL - 1] >= threshold) idxL--;
+                leftY[i] = (idxL <= 0) ? yCoords[0] : InterpolateEdge(profile, yCoords, idxL - 1, idxL, threshold);
 
-                int idxRightRel = Array.FindIndex(profile.Skip(maxIdx).ToArray(), v => v < threshold);
-                if (idxRightRel < 0)
-                    rightY[j] = yCoords[^1];
-                else
-                {
-                    int g2 = maxIdx + idxRightRel;
-                    int g1 = Math.Max(0, g2 - 1);
-                    rightY[j] = InterpolateEdge(profile, yCoords, g1, g2, threshold);
-                }
+                int idxR = maxIdx;
+                while (idxR < profile.Length - 1 && profile[idxR + 1] >= threshold) idxR++;
+                rightY[i] = (idxR >= profile.Length - 1) ? yCoords[^1] : InterpolateEdge(profile, yCoords, idxR, idxR + 1, threshold);
             }
 
             // Stats
             var fwhmX = leftX.Zip(rightX, (l, r) => Math.Abs(r - l)).ToArray();
             var fwhmY = leftY.Zip(rightY, (l, r) => Math.Abs(r - l)).ToArray();
 
-            double meanX = Math.Round(fwhmX.Average(), 3);
+            double meanX = fwhmX.Length > 0 ? Math.Round(fwhmX.Average(), 3) : 0;
             double stdX = Math.Round(StdDev(fwhmX), 4);
-            double meanY = Math.Round(fwhmY.Average(), 3);
+            double meanY = fwhmY.Length > 0 ? Math.Round(fwhmY.Average(), 3) : 0;
             double stdY = Math.Round(StdDev(fwhmY), 4);
 
             double coverage = Math.Round(plateauX * plateauY, 2);
-            ResultText.Text = $"FWHM X = {meanX:F3} ± {stdX:F4} mm\n" +
-                              $"FWHM Y = {meanY:F3} ± {stdY:F4} mm\n" +
-                              $"Coverage = {coverage:F2} mm²\n" +
-                              $"Method = {method}";
+            if (ResultText != null)
+            {
+                ResultText.Text = $"FWHM X = {meanX:F3} ± {stdX:F4} mm\n" +
+                                  $"FWHM Y = {meanY:F3} ± {stdY:F4} mm\n" +
+                                  $"Coverage = {coverage:F2} mm²\n" +
+                                  $"Method = {method}";
+            }
 
             _lastFwhmX = meanX; _lastStdX = stdX;
             _lastFwhmY = meanY; _lastStdY = stdY;
@@ -186,8 +388,11 @@ namespace FilmQA
             _lastMethod = method;
             _lastPlateauX = plateauX; _lastPlateauY = plateauY;
 
-            PlotProfiles(XPlot, xCoords, xProfiles, leftX.Average(), rightX.Average(), method, "XX Profile", meanX, stdX, plateauX / 2.0);
-            PlotProfiles(YPlot, yCoords, yProfiles, leftY.Average(), rightY.Average(), method, "YY Profile", meanY, stdY, plateauY / 2.0);
+            if (leftX.Length > 0 && rightX.Length > 0)
+                PlotProfiles(XPlot, xCoords, xProfiles, leftX.Average(), rightX.Average(), method, "XX Profile", meanX, stdX, plateauX / 2.0);
+            
+            if (leftY.Length > 0 && rightY.Length > 0)
+                PlotProfiles(YPlot, yCoords, yProfiles, leftY.Average(), rightY.Average(), method, "YY Profile", meanY, stdY, plateauY / 2.0);
         }
 
         private static double[] GetPlateauSlice(double[] profile, double[] coords, double plateauWidth, double center)
@@ -357,6 +562,7 @@ namespace FilmQA
                 AddRow("Date", DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
                 AddRow("Method", _lastMethod);
                 AddRow("Plateau (mm)", $"X {_lastPlateauX:F2}, Y {_lastPlateauY:F2}");
+                AddRow("Center (px)", _customCenterPixel.HasValue ? $"{_customCenterPixel.Value.X:F1}, {_customCenterPixel.Value.Y:F1} @ {_customRotationAngle:F1}°" : "Auto");
                 AddRow("FWHM X (mm)", $"{_lastFwhmX:F3} ± {_lastStdX:F4}");
                 AddRow("FWHM Y (mm)", $"{_lastFwhmY:F3} ± {_lastStdY:F4}");
                 AddRow("Coverage (mm²)", $"{_lastCoverage:F2}");
@@ -386,7 +592,7 @@ namespace FilmQA
             var img = new System.Windows.Controls.Image
             {
                 Source = bmp,
-                Width = 700,
+                Width = 475,
                 Stretch = Stretch.Uniform
             };
             doc.Blocks.Add(new BlockUIContainer(img) { Margin = new Thickness(0, 0, 0, 10) });

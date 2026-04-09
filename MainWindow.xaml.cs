@@ -1022,7 +1022,7 @@ namespace FilmQA
 
             try
             {
-                var dlg = new FieldSizeWindow(_doseMap, _dpiX, _settings)
+                var dlg = new FieldSizeWindow(_doseMap, _dpiX, _settings, MainDisplayImage.Source as BitmapSource)
                 {
                     Owner = this
                 };
