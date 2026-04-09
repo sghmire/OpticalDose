@@ -145,7 +145,7 @@
                     </Grid.RowDefinitions>
                     
                     <Viewbox Stretch="Uniform">
-                         <Grid x:Name="AlignGrid">
+                         <Grid x:Name="AlignGrid" Margin="300">
                             <Image x:Name="FilmImage" Stretch="Fill" HorizontalAlignment="Left" VerticalAlignment="Top"/>
                             <Canvas x:Name="OverlayCanvas" Background="Transparent" HorizontalAlignment="Left" VerticalAlignment="Top"
                                     Width="{Binding Width, ElementName=FilmImage}" 

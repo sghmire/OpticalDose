@@ -104,14 +104,14 @@ namespace FilmQA
         private void DPadRotateCW_Click(object sender, RoutedEventArgs e)
         {
             if (TargetRect.Visibility != Visibility.Visible) return;
-            TargetRotation.Angle += 0.5;
+            TargetRotation.Angle += 0.1;
             _customRotationAngle = TargetRotation.Angle;
         }
 
         private void DPadRotateCCW_Click(object sender, RoutedEventArgs e)
         {
             if (TargetRect.Visibility != Visibility.Visible) return;
-            TargetRotation.Angle -= 0.5;
+            TargetRotation.Angle -= 0.1;
             _customRotationAngle = TargetRotation.Angle;
         }
 
@@ -307,19 +307,20 @@ namespace FilmQA
                 }
                 xProfiles[i] = profile;
 
-                double[] plateauSlice = GetPlateauSlice(profile, xCoords, plateauX, 0.0);
+                double[] smoothedProfile = GaussianSmooth1D(profile, 1.5);
+                double[] plateauSlice = GetPlateauSlice(smoothedProfile, xCoords, plateauX, 0.0);
                 double peak = SelectPeak(plateauSlice, method);
                 double threshold = peak / 2.0;
 
-                int maxIdx = Array.IndexOf(profile, profile.Max());
+                int maxIdx = Array.IndexOf(smoothedProfile, smoothedProfile.Max());
                 
                 int idxL = maxIdx;
-                while (idxL > 0 && profile[idxL - 1] >= threshold) idxL--;
-                leftX[i] = (idxL <= 0) ? xCoords[0] : InterpolateEdge(profile, xCoords, idxL - 1, idxL, threshold);
+                while (idxL > 0 && smoothedProfile[idxL - 1] >= threshold) idxL--;
+                leftX[i] = (idxL <= 0) ? xCoords[0] : FitLogisticEdge(smoothedProfile, xCoords, idxL - 1, idxL, threshold, peak);
 
                 int idxR = maxIdx;
-                while (idxR < profile.Length - 1 && profile[idxR + 1] >= threshold) idxR++;
-                rightX[i] = (idxR >= profile.Length - 1) ? xCoords[^1] : InterpolateEdge(profile, xCoords, idxR, idxR + 1, threshold);
+                while (idxR < smoothedProfile.Length - 1 && smoothedProfile[idxR + 1] >= threshold) idxR++;
+                rightX[i] = (idxR >= smoothedProfile.Length - 1) ? xCoords[^1] : FitLogisticEdge(smoothedProfile, xCoords, idxR, idxR + 1, threshold, peak);
             }
 
             // Y profiles
@@ -349,19 +350,20 @@ namespace FilmQA
                 }
                 yProfiles[i] = profile;
 
-                double[] plateauSlice = GetPlateauSlice(profile, yCoords, plateauY, 0.0);
+                double[] smoothedProfile = GaussianSmooth1D(profile, 1.5);
+                double[] plateauSlice = GetPlateauSlice(smoothedProfile, yCoords, plateauY, 0.0);
                 double peak = SelectPeak(plateauSlice, method);
                 double threshold = peak / 2.0;
 
-                int maxIdx = Array.IndexOf(profile, profile.Max());
+                int maxIdx = Array.IndexOf(smoothedProfile, smoothedProfile.Max());
                 
                 int idxL = maxIdx;
-                while (idxL > 0 && profile[idxL - 1] >= threshold) idxL--;
-                leftY[i] = (idxL <= 0) ? yCoords[0] : InterpolateEdge(profile, yCoords, idxL - 1, idxL, threshold);
+                while (idxL > 0 && smoothedProfile[idxL - 1] >= threshold) idxL--;
+                leftY[i] = (idxL <= 0) ? yCoords[0] : FitLogisticEdge(smoothedProfile, yCoords, idxL - 1, idxL, threshold, peak);
 
                 int idxR = maxIdx;
-                while (idxR < profile.Length - 1 && profile[idxR + 1] >= threshold) idxR++;
-                rightY[i] = (idxR >= profile.Length - 1) ? yCoords[^1] : InterpolateEdge(profile, yCoords, idxR, idxR + 1, threshold);
+                while (idxR < smoothedProfile.Length - 1 && smoothedProfile[idxR + 1] >= threshold) idxR++;
+                rightY[i] = (idxR >= smoothedProfile.Length - 1) ? yCoords[^1] : FitLogisticEdge(smoothedProfile, yCoords, idxR, idxR + 1, threshold, peak);
             }
 
             // Stats
@@ -428,7 +430,91 @@ namespace FilmQA
             return c1 + frac * (c2 - c1);
         }
 
+        private static double FitLogisticEdge(double[] profile, double[] coords, int idx1, int idx2, double threshold, double peak)
+        {
+            double lowerBound = peak * 0.20;
+            double upperBound = peak * 0.80;
+
+            var xPoints = new System.Collections.Generic.List<double>();
+            var yLogits = new System.Collections.Generic.List<double>();
+
+            int searchStart = Math.Min(idx1, idx2);
+            while (searchStart > 0 && profile[searchStart] > lowerBound && profile[searchStart] < upperBound) searchStart--;
+            
+            int searchEnd = Math.Max(idx1, idx2);
+            while (searchEnd < profile.Length - 1 && profile[searchEnd] > lowerBound && profile[searchEnd] < upperBound) searchEnd++;
+
+            searchStart = Math.Max(0, searchStart - 1);
+            searchEnd = Math.Min(profile.Length - 1, searchEnd + 1);
+
+            for (int i = searchStart; i <= searchEnd; i++)
+            {
+                double val = profile[i];
+                if (val >= lowerBound && val <= upperBound)
+                {
+                    double ratio = val / peak;
+                    ratio = Math.Clamp(ratio, 0.01, 0.99);
+                    double logit = Math.Log(ratio / (1.0 - ratio));
+                    xPoints.Add(coords[i]);
+                    yLogits.Add(logit);
+                }
+            }
+
+            if (xPoints.Count < 3)
+            {
+                return InterpolateEdge(profile, coords, idx1, idx2, threshold);
+            }
+
+            try
+            {
+                double[] coeffs = FittingMath.PolyFit(xPoints.ToArray(), yLogits.ToArray(), 1);
+                double a = coeffs[0];
+                double b = coeffs[1];
+
+                if (Math.Abs(a) < 1e-12) return InterpolateEdge(profile, coords, idx1, idx2, threshold);
+
+                return -b / a;
+            }
+            catch
+            {
+                return InterpolateEdge(profile, coords, idx1, idx2, threshold);
+            }
+        }
+
+        private static double[] GaussianSmooth1D(double[] data, double sigma)
+        {
+            if (data == null || data.Length == 0 || sigma <= 0) return data;
+            
+            int radius = (int)Math.Ceiling(3 * sigma);
+            int length = data.Length;
+            double[] smoothed = new double[length];
+            double[] kernel = new double[radius * 2 + 1];
+            double sum = 0;
+            
+            for (int i = -radius; i <= radius; i++)
+            {
+                kernel[i + radius] = Math.Exp(-(i * i) / (2 * sigma * sigma));
+                sum += kernel[i + radius];
+            }
+            for (int i = 0; i < kernel.Length; i++) kernel[i] /= sum;
+            
+            for (int i = 0; i < length; i++)
+            {
+                double val = 0;
+                for (int j = -radius; j <= radius; j++)
+                {
+                    int idx = i + j;
+                    if (idx < 0) idx = 0;
+                    if (idx >= length) idx = length - 1;
+                    val += data[idx] * kernel[j + radius];
+                }
+                smoothed[i] = val;
+            }
+            return smoothed;
+        }
+
         private static double StdDev(double[] data)
+
         {
             if (data == null || data.Length == 0) return 0;
             double mean = data.Average();
