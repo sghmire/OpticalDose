@@ -594,7 +594,7 @@ namespace OpticalDose
             var dlg = new Microsoft.Win32.SaveFileDialog 
             { 
                  Filter = "Text Dose Maps (*.txt)|*.txt",
-                 FileName = $"{System.IO.Path.GetFileNameWithoutExtension(_loadedFilePath)}_{plane.Suffix}.txt"
+                 FileName = $"Dicom_{System.IO.Path.GetFileNameWithoutExtension(_loadedFilePath)}_{plane.Suffix}_DoseMap.txt"
             };
 
             if (dlg.ShowDialog() == true)

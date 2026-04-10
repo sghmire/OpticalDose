@@ -19,7 +19,6 @@ using System.Linq;
 using BitMiracle.LibTiff.Classic;
 using System.Runtime.InteropServices;
 using System.Globalization;
-using System.Windows.Documents;
 using System.Printing;
 
 namespace OpticalDose
@@ -1005,7 +1004,7 @@ namespace OpticalDose
 
             if (hasFilm)
             {
-                AnalysisComp.SetFilmDose(_filmDoseMap, _filmDpiX, _filmDpiY, _activeFilmFileName);
+                AnalysisComp.SetFilmDose(_filmDoseMap, _filmDpiX, _filmDpiY, _activeFilmFileName, _referenceCenterPixel);
             }
 
             if (hasPlan)
@@ -1034,14 +1033,26 @@ namespace OpticalDose
             
             _activeDicomFileName = e.FileName ?? "DICOM Set";
 
+            // Update internal state to match extracted plane
+            _importedPlanDose = e.DoseMap;
+            _importedPlanDpiX = 25.4 / e.SpacingX;
+            _importedPlanDpiY = 25.4 / e.SpacingY;
+            _importedPlanRefX = e.RefX;
+            _importedPlanRefY = e.RefY;
+            _importedPlanRefZ = e.RefZ;
+            _importedPlanOriginX = e.OriginX;
+            _importedPlanOriginY = e.OriginY;
+            _importedPlanSpacingYSign = e.SpacingYSign;
+            _importedPlanOrientation = e.PlaneOrientation;
+
             // Send to Analysis Component with full coordinate mapping
-            AnalysisComp.SetPlanDose(e.DoseMap, 
-                                   25.4 / e.SpacingX, 
-                                   25.4 / e.SpacingY,
-                                   e.RefX, e.RefY, e.RefZ,
-                                   e.OriginX, e.OriginY,
-                                   e.SpacingYSign,
-                                   e.PlaneOrientation,
+            AnalysisComp.SetPlanDose(_importedPlanDose, 
+                                   _importedPlanDpiX, 
+                                   _importedPlanDpiY,
+                                   _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ,
+                                   _importedPlanOriginX, _importedPlanOriginY,
+                                   _importedPlanSpacingYSign,
+                                   _importedPlanOrientation,
                                    _activeDicomFileName);
 
             // Switching to Analysis Tab now handled by UI
@@ -1477,9 +1488,9 @@ namespace OpticalDose
             _referenceCenterPixel = ControlToPixel(canvasPoint);
 
             // Update UI Marker
-            Canvas.SetLeft(AlignMarkerIso, canvasPoint.X - 7);
-            Canvas.SetTop(AlignMarkerIso, canvasPoint.Y - 7);
-            AlignMarkerIso.Visibility = Visibility.Visible;
+            UpdateAlignmentCross(AlignCrossIsoH, AlignCrossIsoV, canvasPoint.X, canvasPoint.Y, true);
+            AlignCrossIsoH.Visibility = Visibility.Visible;
+            AlignCrossIsoV.Visibility = Visibility.Visible;
 
             _isPickingCenter = false;
             SelectionCrosshairH.Visibility = Visibility.Collapsed;
@@ -1513,10 +1524,14 @@ namespace OpticalDose
             _isAligning = false;
             _alignStep = 0;
             HideToolOverlay();
-            AlignMarkerLeft.Visibility = Visibility.Collapsed;
-            AlignMarkerRight.Visibility = Visibility.Collapsed;
-            AlignMarkerTop.Visibility = Visibility.Collapsed;
-            AlignMarkerIso.Visibility = Visibility.Collapsed;
+            AlignCross1H.Visibility = Visibility.Collapsed;
+            AlignCross1V.Visibility = Visibility.Collapsed;
+            AlignCross2H.Visibility = Visibility.Collapsed;
+            AlignCross2V.Visibility = Visibility.Collapsed;
+            AlignCross3H.Visibility = Visibility.Collapsed;
+            AlignCross3V.Visibility = Visibility.Collapsed;
+            AlignCrossIsoH.Visibility = Visibility.Collapsed;
+            AlignCrossIsoV.Visibility = Visibility.Collapsed;
             if (StatusText.Text.StartsWith("Alignment:"))
             {
                 StatusText.Text = "Ready";
@@ -1530,27 +1545,27 @@ namespace OpticalDose
             {
                 case 1:
                     _alignLeft = canvasPoint;
-                    Canvas.SetLeft(AlignMarkerLeft, canvasPoint.X - 5);
-                    Canvas.SetTop(AlignMarkerLeft, canvasPoint.Y - 5);
-                    AlignMarkerLeft.Visibility = Visibility.Visible;
+                    UpdateAlignmentCross(AlignCross1H, AlignCross1V, canvasPoint.X, canvasPoint.Y);
+                    AlignCross1H.Visibility = Visibility.Visible;
+                    AlignCross1V.Visibility = Visibility.Visible;
                     _alignStep = 2;
                     ShowToolOverlay("Step: Click RIGHT marker (Blue)");
                     StatusText.Text = "Alignment: Pick Right Marker";
                     break;
                 case 2:
                     _alignRight = canvasPoint;
-                    Canvas.SetLeft(AlignMarkerRight, canvasPoint.X - 5);
-                    Canvas.SetTop(AlignMarkerRight, canvasPoint.Y - 5);
-                    AlignMarkerRight.Visibility = Visibility.Visible;
+                    UpdateAlignmentCross(AlignCross2H, AlignCross2V, canvasPoint.X, canvasPoint.Y);
+                    AlignCross2H.Visibility = Visibility.Visible;
+                    AlignCross2V.Visibility = Visibility.Visible;
                     _alignStep = 3;
                     ShowToolOverlay("Step: Click TOP marker (Green)");
                     StatusText.Text = "Alignment: Pick Top Marker";
                     break;
                 case 3:
                     _alignTop = canvasPoint;
-                    Canvas.SetLeft(AlignMarkerTop, canvasPoint.X - 5);
-                    Canvas.SetTop(AlignMarkerTop, canvasPoint.Y - 5);
-                    AlignMarkerTop.Visibility = Visibility.Visible;
+                    UpdateAlignmentCross(AlignCross3H, AlignCross3V, canvasPoint.X, canvasPoint.Y);
+                    AlignCross3H.Visibility = Visibility.Visible;
+                    AlignCross3V.Visibility = Visibility.Visible;
 
                     System.Windows.Rect renderedRect = GetRenderedImageBounds(MainDisplayImage);
                     Point L = CanvasToPixel(_alignLeft, renderedRect);
@@ -1607,9 +1622,9 @@ namespace OpticalDose
 
             // Show isocenter marker briefly
             Point isoPanelPt = PixelToCanvas(new Point(isoX, isoY), renderedRect);
-            Canvas.SetLeft(AlignMarkerIso, isoPanelPt.X - 7);
-            Canvas.SetTop(AlignMarkerIso, isoPanelPt.Y - 7);
-            AlignMarkerIso.Visibility = Visibility.Visible;
+            UpdateAlignmentCross(AlignCrossIsoH, AlignCrossIsoV, isoPanelPt.X, isoPanelPt.Y, true);
+            AlignCrossIsoH.Visibility = Visibility.Visible;
+            AlignCrossIsoV.Visibility = Visibility.Visible;
             ShowToolOverlay("Isocenter found. Transforming...");
             StatusText.Text = $"Iso: ({isoX:F1}, {isoY:F1}) px, Roll: {angle:F2}°";
             await Task.Delay(600);
@@ -1686,6 +1701,11 @@ namespace OpticalDose
             _blueChannel = newBlue;
             _imgWidth = newW;
             _imgHeight = newH;
+            
+            // The three-point alignment always constructs the output image such that the isocenter 
+            // is at the exact geometric center. We update the reference center to match.
+            _referenceCenterPixel = new Point(newW / 2.0, newH / 2.0);
+            
             UpdateCropUI();
             
             // Clean up alignment UI
@@ -1695,6 +1715,30 @@ namespace OpticalDose
             UpdateDisplayFromRaw();
             StatusText.Text = $"Aligned: {angle:F2}° rotation, center at ({isoX:F0}, {isoY:F0})";
             StatusIndicator.Background = new SolidColorBrush(Colors.Green);
+        }
+
+        private void UpdateAlignmentCross(Line h, Line v, double x, double y, bool isIso = false)
+        {
+            if (h == null || v == null) return;
+            double canvasW = SelectionCanvas.ActualWidth;
+            double canvasH = SelectionCanvas.ActualHeight;
+
+            if (isIso)
+            {
+                // Iso crosshair is a bit larger than regular points
+                h.X1 = 0; h.X2 = canvasW;
+                h.Y1 = y; h.Y2 = y;
+                v.X1 = x; v.X2 = x;
+                v.Y1 = 0; v.Y2 = canvasH;
+            }
+            else
+            {
+                // Regular alignment crosshairs
+                h.X1 = 0; h.X2 = canvasW;
+                h.Y1 = y; h.Y2 = y;
+                v.X1 = x; v.X2 = x;
+                v.Y1 = 0; v.Y2 = canvasH;
+            }
         }
         private void AutoAlign_Click(object sender, RoutedEventArgs e) { }
 
@@ -1735,6 +1779,14 @@ namespace OpticalDose
             if (_doseMap != null) _doseMap = ImageTransforms.Rotate2D(_doseMap, oldH, oldW, isCW);
 
             _imgWidth = oldH; _imgHeight = oldW;
+            
+            if (_referenceCenterPixel.HasValue)
+            {
+                double px = _referenceCenterPixel.Value.X;
+                double py = _referenceCenterPixel.Value.Y;
+                _referenceCenterPixel = isCW ? new Point(_imgWidth - py, px) : new Point(py, _imgHeight - px);
+            }
+
             UpdateCropUI();
             RefreshDisplay();
             StatusText.Text = isCW ? "Rotated CW 90°" : "Rotated CCW 90°";
@@ -1756,6 +1808,13 @@ namespace OpticalDose
                 flipFn(_blueChannel, h, w);
             }
             if (_doseMap != null) flipFn(_doseMap, h, w);
+
+            if (_referenceCenterPixel.HasValue)
+            {
+                double px = _referenceCenterPixel.Value.X;
+                double py = _referenceCenterPixel.Value.Y;
+                _referenceCenterPixel = isHorizontal ? new Point(_imgWidth - px, py) : new Point(px, _imgHeight - py);
+            }
 
             RefreshDisplay();
             StatusText.Text = isHorizontal ? "Flipped Horizontal" : "Flipped Vertical";
@@ -1811,6 +1870,11 @@ namespace OpticalDose
             if (_greenChannel != null) _greenChannel = ImageTransforms.CropArray(_greenChannel, x, y, w, h);
             if (_blueChannel != null) _blueChannel = ImageTransforms.CropArray(_blueChannel, x, y, w, h);
             if (_doseMap != null) _doseMap = ImageTransforms.CropArray(_doseMap, x, y, w, h);
+
+            if (_referenceCenterPixel.HasValue)
+            {
+                _referenceCenterPixel = new Point(_referenceCenterPixel.Value.X - x, _referenceCenterPixel.Value.Y - y);
+            }
 
             _imgWidth = w; _imgHeight = h;
             UpdateCropUI();
@@ -2254,6 +2318,30 @@ namespace OpticalDose
                 SelectionCrosshairV.Y1 = 0;
                 SelectionCrosshairV.Y2 = SelectionCanvas.ActualHeight;
                 SelectionCrosshairV.Visibility = Visibility.Visible;
+                return;
+            }
+
+            if (_isAligning)
+            {
+                Point pos = e.GetPosition(SelectionCanvas);
+                switch (_alignStep)
+                {
+                    case 1:
+                        UpdateAlignmentCross(AlignCross1H, AlignCross1V, pos.X, pos.Y);
+                        AlignCross1H.Visibility = Visibility.Visible;
+                        AlignCross1V.Visibility = Visibility.Visible;
+                        break;
+                    case 2:
+                        UpdateAlignmentCross(AlignCross2H, AlignCross2V, pos.X, pos.Y);
+                        AlignCross2H.Visibility = Visibility.Visible;
+                        AlignCross2V.Visibility = Visibility.Visible;
+                        break;
+                    case 3:
+                        UpdateAlignmentCross(AlignCross3H, AlignCross3V, pos.X, pos.Y);
+                        AlignCross3H.Visibility = Visibility.Visible;
+                        AlignCross3V.Visibility = Visibility.Visible;
+                        break;
+                }
                 return;
             }
 
@@ -2755,11 +2843,13 @@ namespace OpticalDose
                 double display_pixels_per_mm_X = bounds.Width / (_imgWidth * mm_per_pixel_X);
                 double display_pixels_per_mm_Y = bounds.Height / (_imgHeight * mm_per_pixel_Y);
 
-                var rulerBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(200, 0, 0, 0));
-                var minorBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(120, 100, 100, 100));
-                var majorPen = new System.Windows.Media.Pen(rulerBrush, 1.2);
+                var majorBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(85, 85, 85));
+                var minorBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 160, 160));
+                var originBrush = System.Windows.Media.Brushes.DarkOrange;
+                var majorPen = new System.Windows.Media.Pen(majorBrush, 1.0);
                 var minorPen = new System.Windows.Media.Pen(minorBrush, 0.6);
-                majorPen.Freeze(); minorPen.Freeze(); rulerBrush.Freeze(); minorBrush.Freeze();
+                var originPen = new System.Windows.Media.Pen(originBrush, 2.0);
+                majorPen.Freeze(); minorPen.Freeze(); originPen.Freeze(); majorBrush.Freeze(); minorBrush.Freeze();
 
                 double canvasW = TopRulerCanvas.ActualWidth;
                 double canvasH = LeftRulerCanvas.ActualHeight;
@@ -2769,21 +2859,30 @@ namespace OpticalDose
                 double centerX = canvasW / 2.0;
                 double centerY = canvasH / 2.0;
 
+                double majorStep = GetNiceStep(display_pixels_per_mm_X, 50);
+                double minorStep = GetNiceStep(display_pixels_per_mm_X, 8);
+                if (minorStep >= majorStep) minorStep = majorStep / 5.0;
+
                 DrawRuler(TopRulerCanvas, canvasW, 30, dc =>
                 {
-                    dc.DrawLine(new System.Windows.Media.Pen(rulerBrush, 1), new System.Windows.Point(0, 29), new System.Windows.Point(canvasW, 29));
-                    for (double mm = -500; mm <= 500; mm += 1.0)
+                    dc.DrawLine(new System.Windows.Media.Pen(majorBrush, 1), new System.Windows.Point(0, 29), new System.Windows.Point(canvasW, 29));
+                    for (double mm = -1000; mm <= 1000; mm += minorStep)
                     {
                         double x = centerX + (mm * display_pixels_per_mm_X);
-                        if (x < 0 || x > canvasW) continue;
-                        bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
-                        bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
-                        bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
-                        double y1 = isMajor ? 0 : (isMid ? 15 : (isSmall ? 22 : 26));
-                        dc.DrawLine(isMajor ? majorPen : minorPen, new System.Windows.Point(x, y1), new System.Windows.Point(x, 30));
+                        if (x < -10 || x > canvasW + 10) continue;
+
+                        bool isZero = (System.Math.Abs(mm) < 0.001);
+                        bool isMajor = (System.Math.Abs(mm % majorStep) < 0.001) || (System.Math.Abs(mm % majorStep - majorStep) < 0.001);
+                        bool isMid = (majorStep > 5) && (System.Math.Abs(mm % (majorStep / 2)) < 0.001);
+                        
+                        double y1 = isMajor ? 0 : (isMid ? 15 : 22);
+
+                        System.Windows.Media.Pen p = isZero ? originPen : (isMajor ? majorPen : minorPen);
+                        dc.DrawLine(p, new System.Windows.Point(x, y1), new System.Windows.Point(x, 30));
+                        
                         if (isMajor)
                         {
-                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, rulerBrush, 1.25);
+                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, isZero ? originBrush : majorBrush, 1.25);
                             dc.DrawText(ft, new System.Windows.Point(x + 2, 2));
                         }
                     }
@@ -2791,19 +2890,24 @@ namespace OpticalDose
 
                 DrawRuler(BottomRulerCanvas, canvasW, 30, dc =>
                 {
-                    dc.DrawLine(new System.Windows.Media.Pen(rulerBrush, 1), new System.Windows.Point(0, 0.5), new System.Windows.Point(canvasW, 0.5));
-                    for (double mm = -500; mm <= 500; mm += 1.0)
+                    dc.DrawLine(new System.Windows.Media.Pen(majorBrush, 1), new System.Windows.Point(0, 0.5), new System.Windows.Point(canvasW, 0.5));
+                    for (double mm = -1000; mm <= 1000; mm += minorStep)
                     {
                         double x = centerX + (mm * display_pixels_per_mm_X);
-                        if (x < 0 || x > canvasW) continue;
-                        bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
-                        bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
-                        bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
-                        double y2 = isMajor ? 30 : (isMid ? 15 : (isSmall ? 8 : 4));
-                        dc.DrawLine(isMajor ? majorPen : minorPen, new System.Windows.Point(x, 0), new System.Windows.Point(x, y2));
+                        if (x < -10 || x > canvasW + 10) continue;
+
+                        bool isZero = (System.Math.Abs(mm) < 0.001);
+                        bool isMajor = (System.Math.Abs(mm % majorStep) < 0.001) || (System.Math.Abs(mm % majorStep - majorStep) < 0.001);
+                        bool isMid = (majorStep > 5) && (System.Math.Abs(mm % (majorStep / 2)) < 0.001);
+
+                        double y2 = isMajor ? 30 : (isMid ? 15 : 8);
+
+                        System.Windows.Media.Pen p = isZero ? originPen : (isMajor ? majorPen : minorPen);
+                        dc.DrawLine(p, new System.Windows.Point(x, 0), new System.Windows.Point(x, y2));
+
                         if (isMajor)
                         {
-                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, rulerBrush, 1.25);
+                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, isZero ? originBrush : majorBrush, 1.25);
                             dc.DrawText(ft, new System.Windows.Point(x + 2, 16));
                         }
                     }
@@ -2811,19 +2915,24 @@ namespace OpticalDose
 
                 DrawRuler(LeftRulerCanvas, 40, canvasH, dc =>
                 {
-                    dc.DrawLine(new System.Windows.Media.Pen(rulerBrush, 1), new System.Windows.Point(39, 0), new System.Windows.Point(39, canvasH));
-                    for (double mm = -500; mm <= 500; mm += 1.0)
+                    dc.DrawLine(new System.Windows.Media.Pen(majorBrush, 1), new System.Windows.Point(39, 0), new System.Windows.Point(39, canvasH));
+                    for (double mm = -1000; mm <= 1000; mm += minorStep)
                     {
                         double y = centerY + (mm * display_pixels_per_mm_Y);
-                        if (y < 0 || y > canvasH) continue;
-                        bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
-                        bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
-                        bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
-                        double x1 = isMajor ? 0 : (isMid ? 20 : (isSmall ? 30 : 35));
-                        dc.DrawLine(isMajor ? majorPen : minorPen, new System.Windows.Point(x1, y), new System.Windows.Point(40, y));
+                        if (y < -10 || y > canvasH + 10) continue;
+
+                        bool isZero = (System.Math.Abs(mm) < 0.001);
+                        bool isMajor = (System.Math.Abs(mm % majorStep) < 0.001) || (System.Math.Abs(mm % majorStep - majorStep) < 0.001);
+                        bool isMid = (majorStep > 5) && (System.Math.Abs(mm % (majorStep / 2)) < 0.001);
+
+                        double x1 = isMajor ? 0 : (isMid ? 20 : 30);
+
+                        System.Windows.Media.Pen p = isZero ? originPen : (isMajor ? majorPen : minorPen);
+                        dc.DrawLine(p, new System.Windows.Point(x1, y), new System.Windows.Point(40, y));
+
                         if (isMajor)
                         {
-                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, rulerBrush, 1.25);
+                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, isZero ? originBrush : majorBrush, 1.25);
                             dc.PushTransform(new System.Windows.Media.RotateTransform(-90, 10, y));
                             dc.DrawText(ft, new System.Windows.Point(2, y - 2));
                             dc.Pop();
@@ -2833,19 +2942,24 @@ namespace OpticalDose
 
                 DrawRuler(RightRulerCanvas, 40, canvasH, dc =>
                 {
-                    dc.DrawLine(new System.Windows.Media.Pen(rulerBrush, 1), new System.Windows.Point(0.5, 0), new System.Windows.Point(0.5, canvasH));
-                    for (double mm = -500; mm <= 500; mm += 1.0)
+                    dc.DrawLine(new System.Windows.Media.Pen(majorBrush, 1), new System.Windows.Point(0.5, 0), new System.Windows.Point(0.5, canvasH));
+                    for (double mm = -1000; mm <= 1000; mm += minorStep)
                     {
                         double y = centerY + (mm * display_pixels_per_mm_Y);
-                        if (y < 0 || y > canvasH) continue;
-                        bool isMajor = (System.Math.Abs(mm) % 50 < 0.001);
-                        bool isMid = (System.Math.Abs(mm) % 10 < 0.001);
-                        bool isSmall = (System.Math.Abs(mm) % 5 < 0.001);
-                        double x2 = isMajor ? 40 : (isMid ? 20 : (isSmall ? 10 : 5));
-                        dc.DrawLine(isMajor ? majorPen : minorPen, new System.Windows.Point(0, y), new System.Windows.Point(x2, y));
+                        if (y < -10 || y > canvasH + 10) continue;
+
+                        bool isZero = (System.Math.Abs(mm) < 0.001);
+                        bool isMajor = (System.Math.Abs(mm % majorStep) < 0.001) || (System.Math.Abs(mm % majorStep - majorStep) < 0.001);
+                        bool isMid = (majorStep > 5) && (System.Math.Abs(mm % (majorStep / 2)) < 0.001);
+
+                        double x2 = isMajor ? 40 : (isMid ? 20 : 10);
+
+                        System.Windows.Media.Pen p = isZero ? originPen : (isMajor ? majorPen : minorPen);
+                        dc.DrawLine(p, new System.Windows.Point(0, y), new System.Windows.Point(x2, y));
+
                         if (isMajor)
                         {
-                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, rulerBrush, 1.25);
+                            var ft = new System.Windows.Media.FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 10, isZero ? originBrush : majorBrush, 1.25);
                             dc.PushTransform(new System.Windows.Media.RotateTransform(-90, 30, y));
                             dc.DrawText(ft, new System.Windows.Point(26, y - 2));
                             dc.Pop();
@@ -2853,6 +2967,17 @@ namespace OpticalDose
                     }
                 });
             }), System.Windows.Threading.DispatcherPriority.Render);
+        }
+
+        private double GetNiceStep(double pixelsPerMm, double minPixels)
+        {
+            double targetMm = minPixels / pixelsPerMm;
+            double[] niceSteps = { 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 };
+            foreach (var step in niceSteps)
+            {
+                if (step >= targetMm) return step;
+            }
+            return 2000;
         }
 
         private void DrawRuler(System.Windows.Controls.Canvas canvas, double width, double height, Action<System.Windows.Media.DrawingContext> drawAction)
@@ -3002,7 +3127,10 @@ namespace OpticalDose
                 return;
             }
         
-            var dlg = new SaveFileDialog { Filter = "Text Files|*.txt|All Files|*.*", FileName = "DoseMap_Export.txt" };
+            string defaultName = _activeFilmFileName != "None" 
+                ? "Film_" + System.IO.Path.GetFileNameWithoutExtension(_activeFilmFileName) + "_DoseMap.txt" 
+                : "Film_DoseMap_Export.txt";
+            var dlg = new SaveFileDialog { Filter = "Text Files|*.txt|All Files|*.*", FileName = defaultName };
             if (dlg.ShowDialog() == true)
             {
                 StatusText.Text = "Exporting Dose Map...";

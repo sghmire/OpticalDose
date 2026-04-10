@@ -137,8 +137,21 @@
             <!-- Top Left: Measured Dose -->
             <Border Grid.Row="0" Grid.Column="0" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="2">
                 <Grid>
-                    <Canvas x:Name="MeasuredCanvas" ClipToBounds="True" Background="Transparent"
-                            MouseLeftButtonDown="RoiCanvas_MouseDown" MouseMove="RoiCanvas_MouseMove" MouseLeftButtonUp="RoiCanvas_MouseUp">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="25" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="35" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Canvas x:Name="MeasuredTopRuler" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#F0F0F0" />
+                    <Canvas x:Name="MeasuredLeftRuler" Grid.Row="1" Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#F0F0F0" />
+
+                    <Canvas x:Name="MeasuredCanvas" Grid.Row="1" Grid.Column="1" ClipToBounds="False" Background="Transparent"
+                            MouseLeftButtonDown="RoiCanvas_MouseDown" MouseMove="RoiCanvas_MouseMove" MouseLeftButtonUp="RoiCanvas_MouseUp"
+                            SizeChanged="Canvas_SizeChanged">
                         <Image x:Name="MeasuredImage" Stretch="Uniform" 
                                Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Canvas}}" 
                                Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Canvas}}">
@@ -147,44 +160,57 @@
                             </Image.RenderTransform>
                         </Image>
                         <Rectangle x:Name="MeasuredRoiRect" Stroke="Cyan" StrokeThickness="1.5" StrokeDashArray="4,2" Fill="#18FFFFFF" Visibility="Collapsed" />
-                        <Line x:Name="MeasuredProfileLineH" Stroke="Orange" StrokeThickness="1.2" Visibility="Collapsed" />
-                        <Line x:Name="MeasuredProfileLineV" Stroke="Orange" StrokeThickness="1.2" Visibility="Collapsed" />
+                        <Line x:Name="MeasuredProfileLineH" Stroke="Red" StrokeThickness="1.5" Visibility="Collapsed" />
+                        <Line x:Name="MeasuredProfileLineV" Stroke="Red" StrokeThickness="1.5" Visibility="Collapsed" />
                     </Canvas>
                     
                     <!-- File Name Overlay (Top Right) -->
-                    <Border x:Name="FilmOverlayBorder" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Background="#99000000" CornerRadius="4" Padding="8,4" Visibility="Collapsed">
+                    <Border x:Name="FilmOverlayBorder" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Background="#99000000" CornerRadius="4" Padding="8,4" Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Film: " Foreground="#CCCCCC" FontSize="10" FontWeight="Bold"/>
                             <TextBlock x:Name="FilmOverlayText" Text="None" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Border>
 
-                    <TextBlock x:Name="MeasuredEmptyMsg" Text="No Film Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="MeasuredEmptyMsg" Grid.Row="1" Grid.Column="1" Text="No Film Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </Grid>
             </Border>
 
             <!-- Top Right: Planned Dose -->
             <Border Grid.Row="0" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="2">
                 <Grid>
-                    <Canvas x:Name="PlannedCanvas" ClipToBounds="True" Background="Transparent"
-                            MouseLeftButtonDown="RoiCanvas_MouseDown" MouseMove="RoiCanvas_MouseMove" MouseLeftButtonUp="RoiCanvas_MouseUp">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="25" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="35" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Canvas x:Name="PlannedTopRuler" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#F0F0F0" />
+                    <Canvas x:Name="PlannedLeftRuler" Grid.Row="1" Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#F0F0F0" />
+
+                    <Canvas x:Name="PlannedCanvas" Grid.Row="1" Grid.Column="1" ClipToBounds="False" Background="Transparent"
+                            MouseLeftButtonDown="RoiCanvas_MouseDown" MouseMove="RoiCanvas_MouseMove" MouseLeftButtonUp="RoiCanvas_MouseUp"
+                            SizeChanged="Canvas_SizeChanged">
                         <Image x:Name="PlannedImage" Stretch="Uniform"
                                Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Canvas}}"
                                Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Canvas}}" />
                         <Rectangle x:Name="PlannedRoiRect" Stroke="Cyan" StrokeThickness="1.5" StrokeDashArray="4,2" Fill="#18FFFFFF" Visibility="Collapsed" />
-                        <Line x:Name="PlannedProfileLineH" Stroke="Orange" StrokeThickness="1.2" Visibility="Collapsed" />
-                        <Line x:Name="PlannedProfileLineV" Stroke="Orange" StrokeThickness="1.2" Visibility="Collapsed" />
+                        <Line x:Name="PlannedProfileLineH" Stroke="Red" StrokeThickness="1.5" Visibility="Collapsed" />
+                        <Line x:Name="PlannedProfileLineV" Stroke="Red" StrokeThickness="1.5" Visibility="Collapsed" />
                     </Canvas>
 
                     <!-- File Name Overlay (Top Right) -->
-                    <Border x:Name="DicomOverlayBorder" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Background="#99000000" CornerRadius="4" Padding="8,4" Visibility="Collapsed">
+                    <Border x:Name="DicomOverlayBorder" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Background="#99000000" CornerRadius="4" Padding="8,4" Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="DICOM: " Foreground="#CCCCCC" FontSize="10" FontWeight="Bold"/>
                             <TextBlock x:Name="DicomOverlayText" Text="None" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Border>
 
-                    <TextBlock x:Name="PlannedEmptyMsg" Text="No Plan Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="PlannedEmptyMsg" Grid.Row="1" Grid.Column="1" Text="No Plan Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </Grid>
             </Border>
 

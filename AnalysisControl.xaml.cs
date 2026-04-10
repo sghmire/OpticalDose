@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using System.Globalization;
 using ScottPlot;
 
 namespace OpticalDose
@@ -58,6 +59,10 @@ namespace OpticalDose
         {
             InitializeComponent();
             SetupPlots();
+
+            // Ensure rulers are refreshed when the control becomes visible (e.g., tab switch)
+            this.IsVisibleChanged += (s, e) => { if ((bool)e.NewValue) UpdateRulers(); };
+            this.Loaded += (s, e) => UpdateRulers();
         }
 
         private void SetupPlots()
@@ -69,14 +74,25 @@ namespace OpticalDose
             ProfilePlot.Refresh();
         }
 
-        public void SetFilmDose(double[,] dose, double dpiX, double dpiY, string fileName)
+        public void SetFilmDose(double[,] dose, double dpiX, double dpiY, string fileName, Point? referenceCenter = null)
         {
             _filmDose = dose;
             _filmDpiX = dpiX;
             _filmDpiY = dpiY;
             _filmFileName = System.IO.Path.GetFileName(fileName);
-            _filmOriginX = -(dose.GetLength(1) / 2.0) * (25.4 / dpiX);
-            _filmOriginY = -(dose.GetLength(0) / 2.0) * (25.4 / dpiY);
+            
+            if (referenceCenter.HasValue)
+            {
+                // Set origin relative to the picked reference center (Isocenter)
+                _filmOriginX = -referenceCenter.Value.X * (25.4 / dpiX);
+                _filmOriginY = -referenceCenter.Value.Y * (25.4 / dpiY);
+            }
+            else
+            {
+                // Fallback to geometric center if no reference center is provided
+                _filmOriginX = -(dose.GetLength(1) / 2.0) * (25.4 / dpiX);
+                _filmOriginY = -(dose.GetLength(0) / 2.0) * (25.4 / dpiY);
+            }
 
             FilmOverlayText.Text = _filmFileName;
             FilmOverlayBorder.Visibility = Visibility.Visible;
@@ -140,6 +156,13 @@ namespace OpticalDose
                 MeasuredImage.Source = GenerateHeatmap(_filmDose, _filmDpiX, _filmDpiY);
             if (_planDose != null)
                 PlannedImage.Source = GenerateHeatmap(_planDose, _planDpiX, _planDpiY);
+
+            UpdateRulers();
+        }
+
+        private void Canvas_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateRulers();
         }
 
         private BitmapSource GenerateHeatmap(double[,] dose, double dpiX, double dpiY)
@@ -559,25 +582,193 @@ namespace OpticalDose
         {
              AnalysisRequested?.Invoke(this, EventArgs.Empty);
         }
-
         private void SyncDicomButton_Click(object sender, RoutedEventArgs e)
         {
              PlanRequested?.Invoke(this, EventArgs.Empty);
         }
-
         private void Alignment_Changed(object sender, RoutedEventArgs e) 
         {
-            if (XShiftInput == null || YShiftInput == null || MeasuredImageTranslation == null) return;
+            if (XShiftInput == null || YShiftInput == null || MeasuredImageTranslation == null || _filmDose == null) return;
             
-            // Update visual translation (mm to pixels)
-            double pixX = (XShiftInput.Value ?? 0.0) * (_filmDpiX / 25.4);
-            double pixY = (YShiftInput.Value ?? 0.0) * (_filmDpiY / 25.4);
-            
-            MeasuredImageTranslation.X = pixX;
-            MeasuredImageTranslation.Y = pixY;
+            // Image translation is now handled by the Rulers (Coordinate shifting)
+            // so we set the physical translation of the control to zero
+            MeasuredImageTranslation.X = 0;
+            MeasuredImageTranslation.Y = 0;
 
+            UpdateRulers();
             UpdateProfiles();
+            UpdateProfileCrosshairs();
         }
+
+        #region Spatial Rulers Logic
+
+        private void UpdateRulers()
+        {
+            if (!IsLoaded) return;
+            UpdateMeasuredRulers();
+            UpdatePlannedRulers();
+        }
+
+        private void UpdateMeasuredRulers()
+        {
+            if (MeasuredImage.Source == null || _filmDose == null || MeasuredTopRuler == null) return;
+
+            Rect bounds = GetRenderedImageBounds(MeasuredImage, MeasuredCanvas);
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+
+            double mm_per_pixel_X = 25.4 / _filmDpiX;
+            double mm_per_pixel_Y = 25.4 / _filmDpiY;
+            double display_pixels_per_mm_X = bounds.Width / (_filmDose.GetLength(1) * mm_per_pixel_X);
+            double display_pixels_per_mm_Y = bounds.Height / (_filmDose.GetLength(0) * mm_per_pixel_Y);
+
+            double shiftX = XShiftInput.Value ?? 0.0;
+            double shiftY = YShiftInput.Value ?? 0.0;
+
+            // Visual Center of the Canvas
+            double centerX = MeasuredCanvas.ActualWidth / 2.0;
+            double centerY = MeasuredCanvas.ActualHeight / 2.0;
+
+            DrawRuler(MeasuredTopRuler, MeasuredTopRuler.ActualWidth, 25, true, centerX, display_pixels_per_mm_X, shiftX);
+            DrawRuler(MeasuredLeftRuler, 35, MeasuredLeftRuler.ActualHeight, false, centerY, display_pixels_per_mm_Y, shiftY);
+        }
+
+        private void UpdatePlannedRulers()
+        {
+            if (PlannedImage.Source == null || _planDose == null || PlannedTopRuler == null) return;
+
+            Rect bounds = GetRenderedImageBounds(PlannedImage, PlannedCanvas);
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+
+            double mm_per_pixel_X = 25.4 / _planDpiX;
+            double mm_per_pixel_Y = 25.4 / _planDpiY;
+            double display_pixels_per_mm_X = bounds.Width / (_planDose.GetLength(1) * mm_per_pixel_X);
+            double display_pixels_per_mm_Y = bounds.Height / (_planDose.GetLength(0) * mm_per_pixel_Y);
+
+            // Visual Center
+            double centerX = PlannedCanvas.ActualWidth / 2.0;
+            double centerY = PlannedCanvas.ActualHeight / 2.0;
+
+            DrawRuler(PlannedTopRuler, PlannedTopRuler.ActualWidth, 25, true, centerX, display_pixels_per_mm_X, 0);
+            DrawRuler(PlannedLeftRuler, 35, PlannedLeftRuler.ActualHeight, false, centerY, display_pixels_per_mm_Y, 0);
+        }
+
+        private void DrawRuler(Canvas canvas, double width, double height, bool isTop, double centerPx, double pixelsPerMm, double shiftMm)
+        {
+            if (width <= 0 || height <= 0) return;
+
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+            {
+                var rulerBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80));
+                var majorBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(85, 85, 85));
+                var originBrush = Brushes.DarkOrange;
+                var majorPen = new Pen(majorBrush, 1.0);
+                var minorPen = new Pen(new SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 160, 160)), 0.6);
+                var originPen = new Pen(originBrush, 2.0);
+                rulerBrush.Freeze(); majorBrush.Freeze(); originBrush.Freeze(); majorPen.Freeze(); minorPen.Freeze(); originPen.Freeze();
+
+                double majorStep = GetNiceStep(pixelsPerMm, 50);
+                double minorStep = GetNiceStep(pixelsPerMm, 8);
+                if (minorStep >= majorStep) minorStep = majorStep / 5.0;
+
+                if (isTop)
+                {
+                    dc.DrawLine(new Pen(rulerBrush, 1), new System.Windows.Point(0, height - 1), new System.Windows.Point(width, height - 1));
+                    
+                    for (double mm = -1000; mm <= 1000; mm += minorStep)
+                    {
+                        double x = centerPx + (mm + shiftMm) * pixelsPerMm;
+                        if (x < -10 || x > width + 10) continue;
+
+                        bool isZero = Math.Abs(mm) < 0.001;
+                        bool isMajor = Math.Abs(mm % majorStep) < 0.001 || Math.Abs(mm % majorStep - majorStep) < 0.001;
+                        bool isMid = (majorStep > 5) && (Math.Abs(mm % (majorStep / 2)) < 0.001);
+                        
+                        double y1 = isMajor ? 0 : (isMid ? 10 : 18);
+                        dc.DrawLine(isZero ? originPen : (isMajor ? majorPen : minorPen), new System.Windows.Point(x, y1), new System.Windows.Point(x, height));
+
+                        if (isMajor)
+                        {
+                            var ft = new FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 10, isZero ? originBrush : majorBrush, 1.0);
+                            dc.DrawText(ft, new System.Windows.Point(x + 3, 2));
+                        }
+                    }
+                }
+                else
+                {
+                    dc.DrawLine(new Pen(rulerBrush, 1), new System.Windows.Point(width - 1, 0), new System.Windows.Point(width - 1, height));
+                    for (double mm = -1000; mm <= 1000; mm += minorStep)
+                    {
+                        double y = centerPx + (mm + shiftMm) * pixelsPerMm;
+                        if (y < -10 || y > height + 10) continue;
+
+                        bool isZero = Math.Abs(mm) < 0.001;
+                        bool isMajor = Math.Abs(mm % majorStep) < 0.001 || Math.Abs(mm % majorStep - majorStep) < 0.001;
+                        bool isMid = (majorStep > 5) && (Math.Abs(mm % (majorStep / 2)) < 0.001);
+
+                        double x1 = isMajor ? 0 : (isMid ? 15 : 25);
+                        dc.DrawLine(isZero ? originPen : (isMajor ? majorPen : minorPen), new System.Windows.Point(x1, y), new System.Windows.Point(width, y));
+
+                        if (isMajor)
+                        {
+                            var ft = new FormattedText(mm.ToString("0"), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 10, isZero ? originBrush : majorBrush, 1.0);
+                            dc.PushTransform(new RotateTransform(-90, 10, y));
+                            dc.DrawText(ft, new System.Windows.Point(10, y - 10));
+                            dc.Pop();
+                        }
+                    }
+                }
+            }
+
+            canvas.Children.Clear();
+            canvas.Children.Add(new VisualHost(visual));
+        }
+
+        private Rect GetRenderedImageBounds(System.Windows.Controls.Image img, Canvas container)
+        {
+            if (img.Source == null) return new Rect(0, 0, 0, 0);
+
+            double controlWidth = container.ActualWidth;
+            double controlHeight = container.ActualHeight;
+            if (controlWidth == 0 || controlHeight == 0) return new Rect(0, 0, 0, 0);
+
+            double imageWidth = img.Source.Width;
+            double imageHeight = img.Source.Height;
+
+            double ratioX = controlWidth / imageWidth;
+            double ratioY = controlHeight / imageHeight;
+            double ratio = Math.Min(ratioX, ratioY);
+
+            double renderedWidth = imageWidth * ratio;
+            double renderedHeight = imageHeight * ratio;
+
+            double left = (controlWidth - renderedWidth) / 2.0;
+            double top = (controlHeight - renderedHeight) / 2.0;
+
+            return new Rect(left, top, renderedWidth, renderedHeight);
+        }
+
+        private double GetNiceStep(double pixelsPerMm, double minPixels)
+        {
+            double targetMm = minPixels / pixelsPerMm;
+            double[] niceSteps = { 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 };
+            foreach (var step in niceSteps)
+            {
+                if (step >= targetMm) return step;
+            }
+            return 2000;
+        }
+
+        // Helper class to host the drawing visual
+        private class VisualHost : FrameworkElement
+        {
+            private readonly Visual _visual;
+            public VisualHost(Visual visual) { _visual = visual; }
+            protected override int VisualChildrenCount => 1;
+            protected override Visual GetVisualChild(int index) => _visual;
+        }
+
+        #endregion 
         private void GammaParams_Changed(object sender, RoutedEventArgs e) { /* Auto-run optional */ }
         private void ProfileAxisCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateProfiles();
         private void PickProfilePoint_Click(object sender, RoutedEventArgs e)
@@ -679,14 +870,37 @@ namespace OpticalDose
             var canvas = sender as Canvas;
             if (canvas == null) return;
 
+            if (_profilePickMode)
+            {
+                var pos = e.GetPosition(canvas);
+                bool isMeasured = canvas == MeasuredCanvas;
+                var dose = isMeasured ? _filmDose : _planDose;
+                if (dose == null) return;
+
+                int imgCols = dose.GetLength(1);
+                int imgRows = dose.GetLength(0);
+                (double fracX, double fracY) = GetFractionalFromCanvas(canvas, pos, imgCols, imgRows);
+
+                Point lps = isMeasured ? FilmFracToLps(fracX, fracY) : PlanFracToLps(fracX, fracY);
+                _profileLpsX = lps.X;
+                _profileLpsY = lps.Y;
+                _hasProfilePoint = true;
+                UpdateProfileCrosshairs();
+                return;
+            }
+
             if (_profileDragging)
             {
                 var pos = e.GetPosition(canvas);
-                int imgCols = canvas == MeasuredCanvas ? _filmDose.GetLength(1) : _planDose.GetLength(1);
-                int imgRows = canvas == MeasuredCanvas ? _filmDose.GetLength(0) : _planDose.GetLength(0);
+                bool isMeasured = canvas == MeasuredCanvas;
+                var dose = isMeasured ? _filmDose : _planDose;
+                if (dose == null) return;
+
+                int imgCols = dose.GetLength(1);
+                int imgRows = dose.GetLength(0);
                 (double fracX, double fracY) = GetFractionalFromCanvas(canvas, pos, imgCols, imgRows);
 
-                Point lps = canvas == MeasuredCanvas ? FilmFracToLps(fracX, fracY) : PlanFracToLps(fracX, fracY);
+                Point lps = isMeasured ? FilmFracToLps(fracX, fracY) : PlanFracToLps(fracX, fracY);
                 _profileLpsX = lps.X;
                 _profileLpsY = lps.Y;
 
