@@ -149,6 +149,10 @@
                     <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
                             <TextBlock Text="Extract Plane" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,5" />
+                            
+                            <TextBlock Text="Planned Fractions" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,2" />
+                            <ui:NumberBox x:Name="DicomFractionsInput" Value="1" Minimum="1" Maximum="200" Margin="0,0,0,10" Height="34" />
+
                             <ComboBox x:Name="PlaneCombo" Width="300" SelectedIndex="0" Margin="0,0,0,5">
                                 <ComboBoxItem Content="Axial (Z)" Tag="Z" />
                                 <ComboBoxItem Content="Coronal (Y)" Tag="Y" />
@@ -279,5 +283,38 @@
                 </Border>
             </Grid>
         </Border>
+        
+        <!-- Fractions Confirmation Overlay -->
+        <Grid x:Name="FractionsPromptOverlay" Grid.Column="0" Grid.ColumnSpan="2" Background="#BB000000" Visibility="Collapsed">
+            <Border Background="{DynamicResource ControlFillColorDefaultBrush}" 
+                    BorderBrush="{DynamicResource ControlElevationBorderBrush}" 
+                    BorderThickness="1" 
+                    CornerRadius="8" 
+                    Width="400" 
+                    Height="Auto" 
+                    Padding="25"
+                    VerticalAlignment="Center" 
+                    HorizontalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="Confirm Fractions" FontSize="20" FontWeight="Bold" Margin="0,0,0,10" />
+                    <TextBlock Text="We couldn't find the fraction count in the DICOM Plan. Please confirm the number of fractions for this dosimetry comparison:" 
+                               TextWrapping="Wrap" 
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" 
+                               Margin="0,0,0,20"/>
+                    
+                    <TextBlock Text="Planned Fractions" FontSize="11" Margin="0,0,0,5" />
+                    <ui:NumberBox x:Name="DialogFractionsInput" Value="1" Minimum="1" LargeChange="5" Margin="0,0,0,25" Height="40" FontSize="16" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ui:Button x:Name="CancelPromptBtn" Content="Cancel" Appearance="Secondary" HorizontalAlignment="Stretch" Margin="0,0,5,0" Height="40" Click="CancelPrompt_Click" />
+                        <ui:Button x:Name="ConfirmPromptBtn" Content="Confirm &amp; Extract" Appearance="Primary" Grid.Column="1" HorizontalAlignment="Stretch" Margin="5,0,0,0" Height="40" Click="ConfirmPrompt_Click" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

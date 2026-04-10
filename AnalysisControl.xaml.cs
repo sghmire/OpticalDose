@@ -103,7 +103,7 @@ namespace OpticalDose
             CheckReady();
         }
 
-        public void SetPlanDose(double[,] dose, double dpiX, double dpiY, double refX, double refY, double refZ, double origX, double origY, double spacingYSign, string orientation, string fileName)
+        public void SetPlanDose(double[,] dose, double dpiX, double dpiY, double refX, double refY, double refZ, double origX, double origY, double spacingYSign, string orientation, string fileName, int fractions)
         {
             if (spacingYSign < 0)
             {
@@ -131,6 +131,9 @@ namespace OpticalDose
             _planSpacingYSign = spacingYSign;
             _planeOrientation = orientation;
             _dicomFileName = System.IO.Path.GetFileName(fileName);
+            
+            // Dose Scale defaults to 1.0 (Plan is already baked-in)
+            DoseScaleInput.Value = 1.0;
 
             DicomOverlayText.Text = _dicomFileName;
             DicomOverlayBorder.Visibility = Visibility.Visible;
@@ -199,7 +202,7 @@ namespace OpticalDose
 
             bool isX = ProfileAxisCombo.SelectedIndex == 0;
             
-            double fractions = FractionsInput.Value ?? 1.0;
+            double scaleFactor = DoseScaleInput.Value ?? 1.0;
 
             // Map profile point to film/plan indices if selected
             int filmRow = _filmDose != null ? _filmDose.GetLength(0) / 2 : 0;
@@ -234,10 +237,10 @@ namespace OpticalDose
                 if (isX) x = Enumerable.Range(0, planProfile.Length).Select(i => (_planOriginX + i * spX) - _planRefX).ToArray();
                 else x = Enumerable.Range(0, planProfile.Length).Select(i => (_planOriginY + i * spY * _planSpacingYSign) - _planRefY).ToArray();
 
-                // Scale dose by fractions
-                double[] scaledProfile = planProfile.Select(p => p / fractions).ToArray();
+                // Plan dose is already scaled (baked-in) at extraction
+                double[] planData = planProfile;
 
-                var sig = ProfilePlot.Plot.Add.Scatter(x, scaledProfile);
+                var sig = ProfilePlot.Plot.Add.Scatter(x, planData);
                 sig.LegendText = "Planned (DICOM)";
                 sig.Color = ScottPlot.Color.FromHex("#1E90FF"); // DodgerBlue
                 sig.LineWidth = 2.0f;
@@ -250,8 +253,11 @@ namespace OpticalDose
                 double shift = isX ? (_filmDose != null ? (XShiftInput.Value ?? 0.0) : 0.0) : (_filmDose != null ? (YShiftInput.Value ?? 0.0) : 0.0);
                 double fOrg = isX ? _filmOriginX : _filmOriginY;
 
+                // Scale MEASURED (Film) dose by the scale factor
+                double[] scaledMeasured = filmProfile.Select(p => p * scaleFactor).ToArray();
+
                 double[] x = Enumerable.Range(0, filmProfile.Length).Select(i => i * spacing + fOrg + shift).ToArray();
-                var sig = ProfilePlot.Plot.Add.Scatter(x, filmProfile);
+                var sig = ProfilePlot.Plot.Add.Scatter(x, scaledMeasured);
                 sig.LegendText = "Measured (Film)";
                 sig.Color = ScottPlot.Color.FromHex("#00FF00"); // Lime
                 sig.LineWidth = 1.5f;
@@ -296,7 +302,7 @@ namespace OpticalDose
             bool isGlobal = GammaModeCombo.SelectedIndex == 0;
             double shiftX = XShiftInput.Value ?? 0.0;
             double shiftY = YShiftInput.Value ?? 0.0;
-            double fractions = FractionsInput.Value ?? 1.0;
+            double scaleFactor = DoseScaleInput.Value ?? 1.0;
 
             // Engine settings from central AppSettings
             double uncertainty = settings.GammaUncertainty;
@@ -318,7 +324,7 @@ namespace OpticalDose
             });
 
             // No array cropping needed, Gamma loop handles the physical ROI bounds directly
-            await Task.Run(() => PerformGammaAnalysis(filmDoseToUse, _planDose, dd, dta, uncertainty, threshold, isGlobal, shiftX, shiftY, fractions, step, useBicubic, progress));
+            await Task.Run(() => PerformGammaAnalysis(filmDoseToUse, _planDose, dd, dta, uncertainty, threshold, isGlobal, shiftX, shiftY, scaleFactor, step, useBicubic, progress));
 
             DisplayGammaResults();
             ProgressActive?.Invoke(false);
@@ -326,7 +332,7 @@ namespace OpticalDose
             RunAnalysisButton.IsEnabled = true;
         }
 
-        private void PerformGammaAnalysis(double[,] filmDose, double[,] planDose, double dd_percent, double dta_mm, double uncertainty_percent, double threshold_percent, bool isGlobal, double shiftX, double shiftY, double fractions, double step, bool useBicubic, IProgress<double>? progress)
+        private void PerformGammaAnalysis(double[,] filmDose, double[,] planDose, double dd_percent, double dta_mm, double uncertainty_percent, double threshold_percent, bool isGlobal, double shiftX, double shiftY, double doseScale, double step, bool useBicubic, IProgress<double>? progress)
         {
             int fh = filmDose.GetLength(0);
             int fw = filmDose.GetLength(1);
@@ -343,8 +349,8 @@ namespace OpticalDose
             double maxPlan = 0.001;
             foreach (var d in _planDose) if (d > maxPlan) maxPlan = d;
             
-            // Adjust max plan by fractions for thresholding
-            maxPlan /= fractions;
+            // Plan is already baked-in
+            // maxPlan /= fractions; // REMOVED
 
             double threshVal = maxPlan * (threshold_percent / 100.0);
 
@@ -390,7 +396,7 @@ namespace OpticalDose
             {
                 for (int fx = 0; fx < fw; fx++)
                 {
-                    double filmVal = filmDose[fy, fx];
+                    double filmVal = filmDose[fy, fx] * doseScale;
                     if (filmVal < threshVal) { gammaMap[fy, fx] = double.NaN; continue; }
 
                     // Film physical position
@@ -447,20 +453,17 @@ namespace OpticalDose
                             planVal = useBicubic ? GetBicubicPlanDose(px, py) : GetBilinearPlanDose(px, py);
                         }
                         
-                        // Scale Plan dose for comparison
-                        double scaledPlanVal = planVal / fractions;
-
-                        // Dose Difference Component
+                        // Dose Difference Component (compare scaled film to baked-in plan)
+                        double doseDiff = filmVal - planVal;
                         double dDiffPercent;
                         if (isGlobal)
                         {
-                            dDiffPercent = (filmVal - scaledPlanVal) / maxPlan * 100.0;
+                            dDiffPercent = (doseDiff / maxPlan) * 100.0;
                         }
                         else
                         {
-                            // Local Dose Normalization
-                            double localNorm = scaledPlanVal > 0.001 ? scaledPlanVal : 0.001; 
-                            dDiffPercent = (filmVal - scaledPlanVal) / localNorm * 100.0;
+                            double localNorm = planVal > 0.001 * maxPlan ? planVal : 0.001 * maxPlan;
+                            dDiffPercent = (doseDiff / localNorm) * 100.0;
                         }
                         
                         double effectiveDiff = Math.Max(0, Math.Abs(dDiffPercent) - uncertainty_percent);
@@ -1266,8 +1269,7 @@ namespace OpticalDose
                 PassRate = _lastPassRate,
                 DtaMm = GammaDtaInput.Value ?? 0,
                 DdPercent = GammaDdInput.Value ?? 0,
-                ThresholdPercent = GammaThresholdInput.Value ?? 0,
-                Fractions = FractionsInput.Value ?? 1,
+                DoseScale = DoseScaleInput.Value ?? 1.0,
                 Mode = GammaModeCombo.SelectedIndex == 0 ? "Global" : "Local",
                 ShiftX = XShiftInput.Value ?? 0,
                 ShiftY = YShiftInput.Value ?? 0,
@@ -1309,7 +1311,7 @@ namespace OpticalDose
         public double DtaMm { get; set; }
         public double DdPercent { get; set; }
         public double ThresholdPercent { get; set; }
-        public double Fractions { get; set; }
+        public double DoseScale { get; set; }
         public string Mode { get; set; } = "Global";
         public double ShiftX { get; set; }
         public double ShiftY { get; set; }

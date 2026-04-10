@@ -100,8 +100,8 @@
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="Threshold (%)" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
                             <ui:NumberBox x:Name="GammaThresholdInput" Grid.Row="2" Grid.Column="1" Value="10" Minimum="0" Maximum="100" Margin="0,0,0,10" ValueChanged="GammaParams_Changed" Height="34" />
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Fractions" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
-                            <ui:NumberBox x:Name="FractionsInput" Grid.Row="3" Grid.Column="1" Value="1" Minimum="1" Margin="0,0,0,10" ValueChanged="Alignment_Changed" Height="34"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Dose Scale" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,10"/>
+                            <ui:NumberBox x:Name="DoseScaleInput" Grid.Row="3" Grid.Column="1" Value="1.0" SmallChange="0.001" LargeChange="0.01" Minimum="0.01" Margin="0,0,0,10" ValueChanged="Alignment_Changed" Height="34"/>
 
                             <TextBlock Grid.Row="4" Grid.Column="0" Text="Mode" VerticalAlignment="Center" FontSize="11" Margin="0,0,10,0"/>
                             <ComboBox x:Name="GammaModeCombo" Grid.Row="4" Grid.Column="1" SelectedIndex="0" SelectionChanged="GammaParams_Changed" HorizontalAlignment="Stretch" Height="34">

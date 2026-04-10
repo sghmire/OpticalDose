@@ -30,6 +30,7 @@ namespace OpticalDose
         public double OriginX { get; set; }
         public double OriginY { get; set; }
         public double SpacingYSign { get; set; } = 1.0; // -1 for Z-flipped planes (Coronal/Sagittal)
+        public int NumberOfFractions { get; set; } = 1;
     }
 
     public partial class DicomControl : UserControl
@@ -45,7 +46,6 @@ namespace OpticalDose
         private string? _loadedFilePath;
         private string? _patientName;
         private double _doseGridScaling;
-        private double _isoX = 0, _isoY = 0, _isoZ = 0;
 
         // Structure Set
         private List<StructureContour> _structures = new();
@@ -53,6 +53,11 @@ namespace OpticalDose
         private int _currentX, _currentY, _currentZ;
         private int _maxDoseX, _maxDoseY, _maxDoseZ;
         private bool _isUpdatingSliders = false;
+        private bool _fractionsFound = false;
+        
+        private enum PendingAction { None, Extract, Export }
+        private PendingAction _pendingAction = PendingAction.None;
+        private string _pendingAxis = "Z";
 
         public DicomControl()
         {
@@ -164,6 +169,8 @@ namespace OpticalDose
                 MetaThk.Text = $"{thickness:F2} mm";
             }
             if (frames > 1 && _zPositions.Length > 1) MetaThk.Text = $"{Math.Abs(_zPositions[1] - _zPositions[0]):F2} mm (Avg)";
+
+            _doseGridScaling = dataset.GetSingleValueOrDefault(DicomTag.DoseGridScaling, 1.0);
 
             _doseGridScaling = dataset.GetSingleValueOrDefault(DicomTag.DoseGridScaling, 1.0);
 
@@ -573,15 +580,59 @@ namespace OpticalDose
         {
             if (_doseVolume == null || PlaneCombo.SelectedItem is not ComboBoxItem item) return;
             string axis = item.Tag?.ToString() ?? "Z";
-            ExtractPlaneForAxis(axis);
+            
+            if (!_fractionsFound)
+            {
+                _pendingAction = PendingAction.Extract;
+                _pendingAxis = axis;
+                DialogFractionsInput.Value = DicomFractionsInput.Value;
+                FractionsPromptOverlay.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ExtractPlaneForAxis(axis);
+            }
         }
 
         private void ExportPlane_Click(object sender, RoutedEventArgs e)
         {
             if (_doseVolume == null || PlaneCombo.SelectedItem is not ComboBoxItem item) return;
             string axis = item.Tag?.ToString() ?? "Z";
+
+            if (!_fractionsFound)
+            {
+                _pendingAction = PendingAction.Export;
+                _pendingAxis = axis;
+                DialogFractionsInput.Value = DicomFractionsInput.Value;
+                FractionsPromptOverlay.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ExecuteExport(axis);
+            }
+        }
+
+        private void ConfirmPrompt_Click(object sender, RoutedEventArgs e)
+        {
+            FractionsPromptOverlay.Visibility = Visibility.Collapsed;
+            DicomFractionsInput.Value = DialogFractionsInput.Value;
             
-            var plane = PrepareDosePlane(axis);
+            if (_pendingAction == PendingAction.Extract) ExtractPlaneForAxis(_pendingAxis);
+            else if (_pendingAction == PendingAction.Export) ExecuteExport(_pendingAxis);
+            
+            _pendingAction = PendingAction.None;
+        }
+
+        private void CancelPrompt_Click(object sender, RoutedEventArgs e)
+        {
+            FractionsPromptOverlay.Visibility = Visibility.Collapsed;
+            _pendingAction = PendingAction.None;
+        }
+
+        private void ExecuteExport(string axis)
+        {
+            int fractions = (int)(DicomFractionsInput.Value ?? 1);
+            var plane = PrepareDosePlane(axis, fractions);
             if (plane.DoseMap == null) return;
 
             int height = plane.DoseMap.GetLength(0);
@@ -610,6 +661,7 @@ namespace OpticalDose
                 writer.WriteLine($"Ref_Z: {plane.RefZ:F3}");
                 writer.WriteLine($"Plane_Orientation: {axis}");
                 writer.WriteLine($"Spacing_Y_Sign: {plane.SpacingYSign:F1}");
+                writer.WriteLine($"Fractions: {(int)(DicomFractionsInput.Value ?? 1)}");
                 writer.WriteLine($"Interpolation: 1");
                 writer.WriteLine($"X Res: {width}");
                 writer.WriteLine($"Y Res: {height}");
@@ -646,8 +698,9 @@ namespace OpticalDose
             public string Suffix;
         }
 
-        private PreparedPlane PrepareDosePlane(string axis)
+        private PreparedPlane PrepareDosePlane(string axis, int fractions)
         {
+            if (fractions < 1) fractions = 1;
             int rows, cols;
             double[,] doseMap;
             double spX, spY;
@@ -657,7 +710,10 @@ namespace OpticalDose
             {
                 rows = _doseVolume.GetLength(1); cols = _doseVolume.GetLength(2);
                 doseMap = new double[rows, cols];
-                for (int r = 0; r < rows; r++) for (int c = 0; c < cols; c++) doseMap[r, c] = _doseVolume[_currentZ, r, c] * _doseGridScaling * 100.0;
+                for (int r = 0; r < rows; r++) 
+                    for (int c = 0; c < cols; c++) 
+                        doseMap[r, c] = (_doseVolume[_currentZ, r, c] * _doseGridScaling * 100.0) / fractions;
+                
                 spX = _pixelSpacingX; spY = _pixelSpacingY; suffix = $"Axial_Z{_zPositions?[_currentZ]:F1}";
             }
             else if (axis == "Y")
@@ -665,7 +721,10 @@ namespace OpticalDose
                 int f = _doseVolume.GetLength(0); cols = _doseVolume.GetLength(2);
                 doseMap = new double[f, cols];
                 double zSpacing = Math.Abs(_zPositions![1] - _zPositions![0]);
-                for (int r = 0; r < f; r++) for (int c = 0; c < cols; c++) doseMap[r, c] = _doseVolume[f - 1 - r, _currentY, c] * _doseGridScaling * 100.0;
+                for (int r = 0; r < f; r++) 
+                    for (int c = 0; c < cols; c++) 
+                        doseMap[r, c] = (_doseVolume[f - 1 - r, _currentY, c] * _doseGridScaling * 100.0) / fractions;
+                
                 spX = _pixelSpacingX; spY = zSpacing; suffix = $"Coronal_Y{_yPositions?[_currentY]:F1}";
             }
             else
@@ -673,7 +732,10 @@ namespace OpticalDose
                 int f = _doseVolume.GetLength(0); int yr = _doseVolume.GetLength(1);
                 doseMap = new double[f, yr];
                 double zSpacing = Math.Abs(_zPositions![1] - _zPositions![0]);
-                for (int r = 0; r < f; r++) for (int c = 0; c < yr; c++) doseMap[r, c] = _doseVolume[f - 1 - r, c, _currentX] * _doseGridScaling * 100.0;
+                for (int r = 0; r < f; r++) 
+                    for (int c = 0; c < yr; c++) 
+                        doseMap[r, c] = (_doseVolume[f - 1 - r, c, _currentX] * _doseGridScaling * 100.0) / fractions;
+                
                 spX = _pixelSpacingY; spY = zSpacing; suffix = $"Sagittal_X{_xPositions?[_currentX]:F1}";
             }
 
@@ -700,7 +762,8 @@ namespace OpticalDose
 
         private void ExtractPlaneForAxis(string axis)
         {
-            var plane = PrepareDosePlane(axis);
+            int fractions = (int)(DicomFractionsInput.Value ?? 1);
+            var plane = PrepareDosePlane(axis, fractions);
             if (plane.DoseMap == null) return;
 
             double max = 0; foreach (var d in plane.DoseMap) if (d > max) max = d;
@@ -716,7 +779,8 @@ namespace OpticalDose
                 PlaneOrientation = axis,
                 OriginX = plane.OriginX,
                 OriginY = plane.OriginY,
-                SpacingYSign = plane.SpacingYSign
+                SpacingYSign = plane.SpacingYSign,
+                NumberOfFractions = (int)(DicomFractionsInput.Value ?? 1)
             });
 
             StatusText.Text = $"Extracted {axis} plane at {(_zPositions?[_currentZ]):F1} mm";
@@ -834,6 +898,18 @@ namespace OpticalDose
         {
             try
             {
+                // 1. Fractions extraction (Priority)
+                if (ds.Contains(DicomTag.FractionGroupSequence))
+                {
+                    var fgSeq = ds.GetSequence(DicomTag.FractionGroupSequence);
+                    if (fgSeq.Items.Count > 0)
+                    {
+                        int fractions = fgSeq.Items[0].GetSingleValueOrDefault(DicomTag.NumberOfFractionsPlanned, 1);
+                        DicomFractionsInput.Value = fractions;
+                        _fractionsFound = true;
+                    }
+                }
+
                 if (ds.Contains(DicomTag.BeamSequence))
                 {
                     var beamSeq = ds.GetSequence(DicomTag.BeamSequence);

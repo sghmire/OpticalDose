@@ -84,6 +84,7 @@ namespace OpticalDose
         private double _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ;
         private double _importedPlanSpacingYSign = 1.0;
         private string _importedPlanOrientation = "Z";
+        private int _importedPlanFractions = 1;
         private string _activeFilmFileName = "None";
         private string _activeDicomFileName = "None";
 
@@ -242,7 +243,7 @@ namespace OpticalDose
                 AddInfo("Film", snapshot.FilmFileName);
                 AddInfo("Plan", snapshot.PlanFileName);
                 AddInfo("Pass Rate", $"{snapshot.PassRate:F1} %");
-                AddInfo("Gamma", $"{snapshot.DdPercent:F1}% / {snapshot.DtaMm:F1} mm ({snapshot.Mode}, Thresh {snapshot.ThresholdPercent:F1}%, Fx {snapshot.Fractions:F1})");
+                AddInfo("Gamma", $"{snapshot.DdPercent:F1}% / {snapshot.DtaMm:F1} mm ({snapshot.Mode}, Thresh {snapshot.ThresholdPercent:F1}%, Scale {snapshot.DoseScale:F3})");
                 AddInfo("Shifts (mm)", $"X {snapshot.ShiftX:F2}, Y {snapshot.ShiftY:F2}");
                 doc.Blocks.Add(infoTable);
 
@@ -1013,7 +1014,8 @@ namespace OpticalDose
                                        _importedPlanDpiX, _importedPlanDpiY,
                                        _importedPlanRefX, _importedPlanRefY, _importedPlanRefZ,
                                        _importedPlanOriginX, _importedPlanOriginY,
-                                       _importedPlanSpacingYSign, _importedPlanOrientation, _activeDicomFileName);
+                                       _importedPlanSpacingYSign, _importedPlanOrientation, 
+                                       _activeDicomFileName, _importedPlanFractions);
             }
 
             if (hasFilm || hasPlan)
@@ -1044,6 +1046,7 @@ namespace OpticalDose
             _importedPlanOriginY = e.OriginY;
             _importedPlanSpacingYSign = e.SpacingYSign;
             _importedPlanOrientation = e.PlaneOrientation;
+            _importedPlanFractions = e.NumberOfFractions;
 
             // Send to Analysis Component with full coordinate mapping
             AnalysisComp.SetPlanDose(_importedPlanDose, 
@@ -1053,7 +1056,8 @@ namespace OpticalDose
                                    _importedPlanOriginX, _importedPlanOriginY,
                                    _importedPlanSpacingYSign,
                                    _importedPlanOrientation,
-                                   _activeDicomFileName);
+                                   _activeDicomFileName,
+                                   _importedPlanFractions);
 
             // Switching to Analysis Tab now handled by UI
             MenuSelectAnalysis_Click(null!, null!);
@@ -3230,6 +3234,7 @@ namespace OpticalDose
                         double ox = 0, oy = 0, rx = 0, ry = 0, rz = 0;
                         double sySign = 1.0;
                         string orientation = "Z";
+                        int fractions = 1;
 
                         // Read header lines until Array Start
                         bool foundStart = false;
@@ -3257,6 +3262,7 @@ namespace OpticalDose
                             else if (key.Contains("Ref_Z")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out rz);
                             else if (key.Contains("Plane_Orientation")) orientation = val;
                             else if (key.Contains("Spacing_Y_Sign")) double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out sySign);
+                            else if (key.Contains("Fractions")) int.TryParse(val, out fractions);
                         }
 
                         if (!foundStart || width <= 0 || height <= 0)
@@ -3322,6 +3328,7 @@ namespace OpticalDose
                             _importedPlanRefZ = rz;
                             _importedPlanSpacingYSign = sySign;
                             _importedPlanOrientation = orientation;
+                            _importedPlanFractions = fractions;
                             _activeDicomFileName = dlg.FileName;
                             StatusText.Text = "DICOM Dose Map Imported (Ready for Analysis)";
                             SyncAllDataToAnalysis();
