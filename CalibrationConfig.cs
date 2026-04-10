@@ -1,6 +1,6 @@
 using System;
 
-namespace FilmQA
+namespace OpticalDose
 {
     public class CalibrationConfig
     {

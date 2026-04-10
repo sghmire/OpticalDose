@@ -1,12 +1,12 @@
-<ui:FluentWindow x:Class="FilmQA.MainWindow"
+<ui:FluentWindow x:Class="OpticalDose.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        xmlns:local="clr-namespace:FilmQA"
+        xmlns:local="clr-namespace:OpticalDose"
         mc:Ignorable="d"
-        Title="Film QA" Height="900" Width="1400"
+        Title="Optical Dose" Height="900" Width="1400"
         Icon="/Icon.png"
         WindowStartupLocation="CenterScreen"
         WindowState="Maximized"
@@ -128,7 +128,7 @@
             <!-- 2. Foreground Title Overlay: Dynamic Contrast -->
             <Grid IsHitTestVisible="False">
                 <ui:TextBlock 
-                    Text="Film QA" 
+                    Text="Optical Dose" 
                     FontTypography="Caption" 
                     FontWeight="Bold" 
                     VerticalAlignment="Center"

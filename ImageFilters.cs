@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace FilmQA
+namespace OpticalDose
 {
     /// <summary>
     /// Pure static image filtering and interpolation routines.

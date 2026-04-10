@@ -1,6 +1,6 @@
 using System;
 
-namespace FilmQA
+namespace OpticalDose
 {
     /// <summary>
     /// Pure static color map routines for dose heatmap rendering.

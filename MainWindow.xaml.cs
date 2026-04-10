@@ -22,7 +22,7 @@ using System.Globalization;
 using System.Windows.Documents;
 using System.Printing;
 
-namespace FilmQA
+namespace OpticalDose
 {
     /// <summary>
     /// Interaction logic for MainWindow.xaml
@@ -218,7 +218,7 @@ namespace FilmQA
                     FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
                 };
 
-                doc.Blocks.Add(new Paragraph(new Run("Film Dosimetry Report"))
+                doc.Blocks.Add(new Paragraph(new Run("Optical Dose Analysis Report"))
                 {
                     FontSize = 22,
                     FontWeight = FontWeights.Bold,
@@ -270,7 +270,7 @@ namespace FilmQA
                 {
                     doc.PageHeight = pd.PrintableAreaHeight;
                     doc.PageWidth = pd.PrintableAreaWidth;
-                    pd.PrintDocument(((IDocumentPaginatorSource)doc).DocumentPaginator, "Film Dosimetry Report");
+                    pd.PrintDocument(((IDocumentPaginatorSource)doc).DocumentPaginator, "Optical Dose Analysis Report");
                 }
             }
             catch (Exception ex)
@@ -436,7 +436,7 @@ namespace FilmQA
 
             stack.Children.Add(new System.Windows.Controls.TextBlock
             {
-                Text = "Film QA",
+                Text = "Optical Dose",
                 FontSize = 24,
                 FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -463,7 +463,7 @@ namespace FilmQA
 
             var dialog = new ContentDialog(_dialogService.GetContentPresenter())
             {
-                Title = "About Film QA",
+                Title = "About Optical Dose",
                 Content = stack,
                 CloseButtonText = "Close",
                 DefaultButton = ContentDialogButton.Close

@@ -11,7 +11,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using ScottPlot;
 
-namespace FilmQA
+namespace OpticalDose
 {
     public partial class AnalysisControl : UserControl
     {

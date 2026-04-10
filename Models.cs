@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Input;
 
-namespace FilmQA
+namespace OpticalDose
 {
     public class RelayCommand : ICommand
     {

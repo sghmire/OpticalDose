@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <Version>1.0.0</Version>
-    <Product>Film QA</Product>
-    <AssemblyName>Film QA</AssemblyName>
-    <Title>Film QA</Title>
-    <Description>Professional Film QA Software</Description>
+    <Product>Optical Dose</Product>
+    <AssemblyName>OpticalDose</AssemblyName>
+    <Title>Optical Dose</Title>
+    <Description>Professional Optical Dose Analysis Software</Description>
   </PropertyGroup>
 
   <ItemGroup>

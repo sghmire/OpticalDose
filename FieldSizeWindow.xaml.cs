@@ -13,7 +13,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Documents;
 using System.Printing;
 
-namespace FilmQA
+namespace OpticalDose
 {
     public partial class FieldSizeWindow : FluentWindow
     {

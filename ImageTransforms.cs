@@ -1,6 +1,6 @@
 using System;
 
-namespace FilmQA
+namespace OpticalDose
 {
     /// <summary>
     /// Pure static image transformation routines (rotate, flip, crop, clone).

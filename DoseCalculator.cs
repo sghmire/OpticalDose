@@ -1,6 +1,6 @@
 using System;
 
-namespace FilmQA
+namespace OpticalDose
 {
     /// <summary>
     /// Static dose calculation from calibration curves.

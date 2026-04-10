@@ -14,7 +14,7 @@ using System.Windows.Documents;
 using System.Printing;
 using Wpf.Ui.Controls;
 
-namespace FilmQA
+namespace OpticalDose
 {
     public partial class StarShotWindow : FluentWindow
     {
