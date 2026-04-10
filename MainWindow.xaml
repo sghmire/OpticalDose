@@ -116,6 +116,9 @@
                         </MenuItem>
                         <MenuItem Header="_Help" Height="45">
                             <MenuItem Header="_About" Click="About_Click" />
+                            <MenuItem Header="_Tutorial">
+                                <MenuItem Header="FWHM Field Size" Click="TutorialJawSize_Click" />
+                            </MenuItem>
                             <MenuItem Header="_References" Click="References_Click" />
                         </MenuItem>
                     </Menu>

@@ -472,6 +472,45 @@ namespace FilmQA
             await dialog.ShowAsync();
         }
 
+        private async void TutorialJawSize_Click(object sender, RoutedEventArgs e)
+        {
+            var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+            
+            stack.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "How to perform a FWHM Field Size test",
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 0, 0, 15)
+            });
+
+            stack.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "• Irradiate Full and Half dose on two films\n" +
+                       "• Extract ROI for 0, half dose and full dose\n" +
+                       "• Poly fit with Degree: 2 and single channel: Green\n" +
+                       ". Apply median filtering; kernel size: 3\n" +
+                       ". Convert to dose map\n" +
+                       ". Open Field Size tool\n" +
+                       "• Align the film well with the ROI\n" +
+                       "• Analyze",
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 14,
+                LineHeight = 22,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+
+            var dialog = new Wpf.Ui.Controls.ContentDialog(_dialogService.GetContentPresenter())
+            {
+                Title = "Tutorial: FWHM Field Size",
+                Content = stack,
+                CloseButtonText = "Close",
+                DefaultButton = Wpf.Ui.Controls.ContentDialogButton.Close
+            };
+
+            await dialog.ShowAsync();
+        }
+
         private async void References_Click(object sender, RoutedEventArgs e)
         {
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Height = 500 };
@@ -1258,54 +1297,107 @@ namespace FilmQA
 
             try
             {
-                double[] doses = CalibrationPoints.Select(p => p.Dose).ToArray();
-                double[] rNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Red, 1) / 65535.0)).ToArray();
-                double[] gNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Green, 1) / 65535.0)).ToArray();
-                double[] bNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Blue, 1) / 65535.0)).ToArray();
-
-                string channelMode = (ChannelFitDropDown.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Single: Red";
                 int degree = DegreeFitDropDown.SelectedIndex + 1;
 
+                // 1. Group by dose to pre-average points for the fit calculation
+                var groupedPoints = CalibrationPoints
+                    .GroupBy(p => p.Dose)
+                    .Select(g => new
+                    {
+                        Dose = g.Key,
+                        Red = g.Average(p => p.Red),
+                        Green = g.Average(p => p.Green),
+                        Blue = g.Average(p => p.Blue)
+                    })
+                    .OrderBy(p => p.Dose)
+                    .ToList();
+
+                if (groupedPoints.Count <= degree)
+                {
+                    System.Windows.MessageBox.Show($"Need at least {degree + 1} distinct dose levels to calculate a polynomial fit of degree {degree}.", "Insufficient Distinct Doses");
+                    return;
+                }
+
+                // Arrays for fitting (Averaged)
+                double[] fitDoses = groupedPoints.Select(p => p.Dose).ToArray();
+                double[] fitRNorm = groupedPoints.Select(p => -Math.Log10(Math.Max(p.Red, 1) / 65535.0)).ToArray();
+                double[] fitGNorm = groupedPoints.Select(p => -Math.Log10(Math.Max(p.Green, 1) / 65535.0)).ToArray();
+                double[] fitBNorm = groupedPoints.Select(p => -Math.Log10(Math.Max(p.Blue, 1) / 65535.0)).ToArray();
+
+                // Arrays for overall evaluation/plot (All Points)
+                double[] allDoses = CalibrationPoints.Select(p => p.Dose).ToArray();
+                double[] allRNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Red, 1) / 65535.0)).ToArray();
+                double[] allGNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Green, 1) / 65535.0)).ToArray();
+                double[] allBNorm = CalibrationPoints.Select(p => -Math.Log10(Math.Max(p.Blue, 1) / 65535.0)).ToArray();
+
+                string channelMode = (ChannelFitDropDown.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Single: Red";
+                
                 CurrentConfig = new CalibrationConfig { Channel = channelMode, Degree = degree, CreatedAt = DateTime.Now };
-                double[]? doseFit = null;
+                double[]? allDosesFit = null;
 
                 if (channelMode.Contains("Single")) {
-                    double[] xData = channelMode.Contains("Red") ? rNorm : (channelMode.Contains("Green") ? gNorm : bNorm);
-                    CurrentConfig.FirstFit = FittingMath.PolyFit(xData, doses, degree);
-                    CurrentConfig.RSquared = FittingMath.CalculateRSquared(xData, doses, CurrentConfig.FirstFit);
+                    double[] fitXData = channelMode.Contains("Red") ? fitRNorm : (channelMode.Contains("Green") ? fitGNorm : fitBNorm);
+                    double[] allXData = channelMode.Contains("Red") ? allRNorm : (channelMode.Contains("Green") ? allGNorm : allBNorm);
+                    
+                    CurrentConfig.FirstFit = FittingMath.PolyFit(fitXData, fitDoses, degree);
+                    CurrentConfig.RSquared = FittingMath.CalculateRSquared(fitXData, fitDoses, CurrentConfig.FirstFit);
+                    
+                    // Evaluate on all points for the plot
                     if (CurrentConfig.FirstFit != null)
                     {
                         double[] coeffs = CurrentConfig.FirstFit;
-                        doseFit = xData.Select(x => FittingMath.PolyVal(coeffs, x)).ToArray();
+                        allDosesFit = allXData.Select(x => FittingMath.PolyVal(coeffs, x)).ToArray();
                     }
                 } else if (channelMode.Contains("Dual")) {
-                    double[] ratio = channelMode.Contains("Red") ? rNorm.Zip(bNorm, (r, b) => r / (b + 1e-9)).ToArray() : gNorm.Zip(bNorm, (g, b) => g / (b + 1e-9)).ToArray();
-                    double[] primary = channelMode.Contains("Red") ? rNorm : gNorm;
-                    CurrentConfig.FirstFit = FittingMath.PolyFit(ratio, primary, degree);
-                    double[] val1 = ratio.Select(r => FittingMath.PolyVal(CurrentConfig.FirstFit!, r)).ToArray();
-                    CurrentConfig.SecondFit = FittingMath.PolyFit(val1, doses, degree);
-                    CurrentConfig.RSquared = FittingMath.CalculateRSquared(val1, doses, CurrentConfig.SecondFit);
-                    doseFit = val1.Select(v => FittingMath.PolyVal(CurrentConfig.SecondFit!, v)).ToArray();
+                    double[] fitRatio = channelMode.Contains("Red") 
+                        ? fitRNorm.Zip(fitBNorm, (r, b) => r / (b + 1e-9)).ToArray() 
+                        : fitGNorm.Zip(fitBNorm, (g, b) => g / (b + 1e-9)).ToArray();
+                    double[] fitPrimary = channelMode.Contains("Red") ? fitRNorm : fitGNorm;
+                    
+                    double[] allRatio = channelMode.Contains("Red") 
+                        ? allRNorm.Zip(allBNorm, (r, b) => r / (b + 1e-9)).ToArray() 
+                        : allGNorm.Zip(allBNorm, (g, b) => g / (b + 1e-9)).ToArray();
+                    
+                    CurrentConfig.FirstFit = FittingMath.PolyFit(fitRatio, fitPrimary, degree);
+                    
+                    double[] fitVal1 = fitRatio.Select(r => FittingMath.PolyVal(CurrentConfig.FirstFit!, r)).ToArray();
+                    CurrentConfig.SecondFit = FittingMath.PolyFit(fitVal1, fitDoses, degree);
+                    CurrentConfig.RSquared = FittingMath.CalculateRSquared(fitVal1, fitDoses, CurrentConfig.SecondFit);
+                    
+                    // Evaluate on all points for the plot
+                    double[] allVal1 = allRatio.Select(r => FittingMath.PolyVal(CurrentConfig.FirstFit!, r)).ToArray();
+                    allDosesFit = allVal1.Select(v => FittingMath.PolyVal(CurrentConfig.SecondFit!, v)).ToArray();
                 } else if (channelMode.Contains("Triple")) {
-                    CurrentConfig.FirstFit = FittingMath.PolyFit(rNorm, doses, degree);
-                    CurrentConfig.SecondFit = FittingMath.PolyFit(gNorm, doses, degree);
-                    CurrentConfig.ThirdFit = FittingMath.PolyFit(bNorm, doses, degree);
-                    CurrentConfig.DeltaOpt = FittingMath.OptimizeTripleChannelDelta(rNorm, gNorm, bNorm, CurrentConfig.FirstFit, CurrentConfig.SecondFit, CurrentConfig.ThirdFit, doses);
-                    doseFit = new double[doses.Length];
-                    for (int i = 0; i < doses.Length; i++) {
-                        double rD = FittingMath.PolyVal(CurrentConfig.FirstFit!, rNorm[i] * CurrentConfig.DeltaOpt);
-                        double gD = FittingMath.PolyVal(CurrentConfig.SecondFit!, gNorm[i] * CurrentConfig.DeltaOpt);
-                        double bD = FittingMath.PolyVal(CurrentConfig.ThirdFit!, bNorm[i] * CurrentConfig.DeltaOpt);
-                        doseFit[i] = (rD + gD + bD) / 3.0;
+                    CurrentConfig.FirstFit = FittingMath.PolyFit(fitRNorm, fitDoses, degree);
+                    CurrentConfig.SecondFit = FittingMath.PolyFit(fitGNorm, fitDoses, degree);
+                    CurrentConfig.ThirdFit = FittingMath.PolyFit(fitBNorm, fitDoses, degree);
+                    CurrentConfig.DeltaOpt = FittingMath.OptimizeTripleChannelDelta(fitRNorm, fitGNorm, fitBNorm, CurrentConfig.FirstFit, CurrentConfig.SecondFit, CurrentConfig.ThirdFit, fitDoses);
+                    
+                    // R-squared on FIT points for triple channel
+                    double[] fitDosesCalc = new double[fitDoses.Length];
+                    for (int i = 0; i < fitDoses.Length; i++) {
+                        double rD = FittingMath.PolyVal(CurrentConfig.FirstFit!, fitRNorm[i] * CurrentConfig.DeltaOpt);
+                        double gD = FittingMath.PolyVal(CurrentConfig.SecondFit!, fitGNorm[i] * CurrentConfig.DeltaOpt);
+                        double bD = FittingMath.PolyVal(CurrentConfig.ThirdFit!, fitBNorm[i] * CurrentConfig.DeltaOpt);
+                        fitDosesCalc[i] = (rD + gD + bD) / 3.0;
                     }
-                    double ssTot = doses.Sum(d => Math.Pow(d - doses.Average(), 2));
-                    double ssRes = doses.Zip(doseFit, (actual, fit) => Math.Pow(actual - fit, 2)).Sum();
+                    double ssTot = fitDoses.Sum(d => Math.Pow(d - fitDoses.Average(), 2));
+                    double ssRes = fitDoses.Zip(fitDosesCalc, (actual, fit) => Math.Pow(actual - fit, 2)).Sum();
                     CurrentConfig.RSquared = ssTot > 0 ? 1 - (ssRes / ssTot) : 0;
+                    
+                    // Evaluate on all points for the plot
+                    allDosesFit = new double[allDoses.Length];
+                    for (int i = 0; i < allDoses.Length; i++) {
+                        double rD = FittingMath.PolyVal(CurrentConfig.FirstFit!, allRNorm[i] * CurrentConfig.DeltaOpt);
+                        double gD = FittingMath.PolyVal(CurrentConfig.SecondFit!, allGNorm[i] * CurrentConfig.DeltaOpt);
+                        double bD = FittingMath.PolyVal(CurrentConfig.ThirdFit!, allBNorm[i] * CurrentConfig.DeltaOpt);
+                        allDosesFit[i] = (rD + gD + bD) / 3.0;
+                    }
                 }
 
                 if (CurrentConfig != null) {
                     RSquaredText.Text = CurrentConfig.RSquared.ToString("F4");
-                    UpdatePlot(doses, doseFit, channelMode);
+                    UpdatePlot(allDoses, allDosesFit, channelMode);
                     StatusText.Text = "Calibration Successful";
                     StatusIndicator.Background = new SolidColorBrush(System.Windows.Media.Colors.Green);
                 }

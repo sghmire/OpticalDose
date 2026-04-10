@@ -77,23 +77,58 @@ namespace FilmQA
             double pxWidth = tX / _mmPerPixelX;
             double pxHeight = tY / _mmPerPixelY;
 
+            bool wasVisible = TargetRect.Visibility == Visibility.Visible;
+            double cx = 0, cy = 0;
+
+            if (wasVisible)
+            {
+                double currentLeft = Canvas.GetLeft(TargetRect);
+                double currentTop = Canvas.GetTop(TargetRect);
+                if (double.IsNaN(currentLeft)) currentLeft = 0;
+                if (double.IsNaN(currentTop)) currentTop = 0;
+                cx = currentLeft + TargetRect.Width / 2.0;
+                cy = currentTop + TargetRect.Height / 2.0;
+            }
+
             TargetRect.Width = pxWidth;
             TargetRect.Height = pxHeight;
 
             int w = _doseMap.GetLength(1);
             int h = _doseMap.GetLength(0);
 
-            if (TargetRect.Visibility != Visibility.Visible)
+            if (!wasVisible)
             {
                 TargetRect.Visibility = Visibility.Visible;
                 TargetCenter.Visibility = Visibility.Visible;
-                // Center it initially
                 Canvas.SetLeft(TargetRect, (w - pxWidth) / 2.0);
                 Canvas.SetTop(TargetRect, (h - pxHeight) / 2.0);
             }
+            else
+            {
+                Canvas.SetLeft(TargetRect, cx - pxWidth / 2.0);
+                Canvas.SetTop(TargetRect, cy - pxHeight / 2.0);
+            }
 
             UpdateCenterFromRect();
-            OverlayCanvas.Focus(); // So keyboard shortcuts work
+            OverlayCanvas.Focus();
+        }
+
+        private void CenterTarget_Click(object sender, RoutedEventArgs e)
+        {
+            if (TargetRect.Visibility != Visibility.Visible) return;
+
+            int w = _doseMap.GetLength(1);
+            int h = _doseMap.GetLength(0);
+
+            Canvas.SetLeft(TargetRect, (w - TargetRect.Width) / 2.0);
+            Canvas.SetTop(TargetRect, (h - TargetRect.Height) / 2.0);
+
+            TargetRotation.Angle = 0;
+            _customRotationAngle = 0.0;
+
+            UpdateCenterFromRect();
+            if (StatusText != null) StatusText.Text = "ROI Centered to Image boundaries.";
+            OverlayCanvas.Focus();
         }
 
         private void DPadUp_Click(object sender, RoutedEventArgs e) => NudgeRect(0, -1);

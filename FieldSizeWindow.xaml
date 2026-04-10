@@ -41,7 +41,14 @@
                                 </StackPanel>
                             </Grid>
                             
-                            <ui:Button Content="Apply Reticle Size" Icon="{ui:SymbolIcon Square24}" Appearance="Secondary" HorizontalAlignment="Stretch" Height="36" Click="ApplyReticleSize_Click" Margin="0,0,0,10" />
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ui:Button Grid.Column="0" Content="Apply Size" Icon="{ui:SymbolIcon Square24}" Appearance="Secondary" HorizontalAlignment="Stretch" Height="36" Margin="0,0,4,0" Click="ApplyReticleSize_Click" />
+                                <ui:Button Grid.Column="1" Content="Center ROI" Icon="{ui:SymbolIcon Target24}" Appearance="Secondary" HorizontalAlignment="Stretch" Height="36" Margin="4,0,0,0" Click="CenterTarget_Click" />
+                            </Grid>
                             
                             <Grid HorizontalAlignment="Center" Margin="0,5,0,5">
                                 <Grid.RowDefinitions>
@@ -156,14 +163,14 @@
                                     Focusable="True"
                                     KeyDown="OverlayCanvas_KeyDown">
                                 <!-- Draggable target box -->
-                                <Rectangle x:Name="TargetRect" RenderTransformOrigin="0.5,0.5" Stroke="White" StrokeThickness="1" Fill="#44FF0000" Visibility="Hidden" IsHitTestVisible="False">
+                                <Rectangle x:Name="TargetRect" RenderTransformOrigin="0.5,0.5" Stroke="#00FFFF" StrokeThickness="2.5" StrokeDashArray="4 2" Fill="#4400FFFF" Visibility="Hidden" IsHitTestVisible="False">
                                     <Rectangle.RenderTransform>
                                         <RotateTransform x:Name="TargetRotation" Angle="0"/>
                                     </Rectangle.RenderTransform>
                                 </Rectangle>
                                 
                                 <!-- Center crosshair point -->
-                                <Ellipse x:Name="TargetCenter" Width="6" Height="6" Fill="Red" Visibility="Hidden" IsHitTestVisible="False" Margin="-3,-3,0,0"/>
+                                <Ellipse x:Name="TargetCenter" Width="10" Height="10" Stroke="Black" StrokeThickness="1.5" Fill="#00FFFF" Visibility="Hidden" IsHitTestVisible="False" Margin="-5,-5,0,0"/>
                             </Canvas>
                          </Grid>
                     </Viewbox>
