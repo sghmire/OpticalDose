@@ -30,7 +30,7 @@
                         <ui:Button x:Name="SyncFilmButton" Content="Sync Film" Icon="{ui:SymbolIcon ArrowSync24}" HorizontalAlignment="Stretch" Margin="0,0,5,0" Click="SyncFilmButton_Click" Height="38" />
                         <ui:Button x:Name="SyncDicomButton" Grid.Column="1" Content="Sync DICOM" Icon="{ui:SymbolIcon CubeSync24}" HorizontalAlignment="Stretch" Click="SyncDicomButton_Click" Height="38" />
                     </Grid>
-                    
+
                     <!-- ROI Selection -->
                     <TextBlock Text="Region of Interest" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,5" />
                     <Grid Margin="0,0,0,5">
@@ -163,7 +163,7 @@
                         <Line x:Name="MeasuredProfileLineH" Stroke="Red" StrokeThickness="1.5" Visibility="Collapsed" />
                         <Line x:Name="MeasuredProfileLineV" Stroke="Red" StrokeThickness="1.5" Visibility="Collapsed" />
                     </Canvas>
-                    
+
                     <!-- File Name Overlay (Top Right) -->
                     <Border x:Name="FilmOverlayBorder" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Background="#99000000" CornerRadius="4" Padding="8,4" Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal">
@@ -173,6 +173,7 @@
                     </Border>
 
                     <TextBlock x:Name="MeasuredEmptyMsg" Grid.Row="1" Grid.Column="1" Text="No Film Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Label Content="mm" HorizontalAlignment="Left" VerticalAlignment="Top"/>
                 </Grid>
             </Border>
 
@@ -211,6 +212,7 @@
                     </Border>
 
                     <TextBlock x:Name="PlannedEmptyMsg" Grid.Row="1" Grid.Column="1" Text="No Plan Dose Loaded" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Label Content="mm" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Grid>
             </Border>
 
@@ -223,7 +225,7 @@
             <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="5" Padding="2" Background="#15FFFFFF">
                 <Grid>
                     <Image x:Name="GammaImage" Stretch="Uniform" />
-                    
+
                     <!-- Gamma Results Overlay (Top Left Header) -->
                     <Border x:Name="GammaResultsOverlay" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5" Background="#40FFFFFF" CornerRadius="4" Padding="10,2" Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal">
