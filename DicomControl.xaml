@@ -41,6 +41,15 @@
                                FontWeight="SemiBold"
                                Click="LoadDicomSet_Click" />
 
+                    <ui:Button x:Name="ImportPlaneButton" 
+                               Content="Import Plane DICOM" 
+                               Icon="{ui:SymbolIcon DocumentArrowDown24}" 
+                               Width="300" 
+                               Height="34" 
+                               Appearance="Secondary" 
+                               FontSize="11"
+                               Margin="0,5,0,0"
+                               Click="ImportPlaneDicom_Click" />
 
                 </StackPanel>
 

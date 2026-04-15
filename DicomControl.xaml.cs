@@ -55,9 +55,17 @@ namespace OpticalDose
         private bool _isUpdatingSliders = false;
         private bool _fractionsFound = false;
         
-        private enum PendingAction { None, Extract, Export }
+        private enum PendingAction { None, Extract, Export, ImportPlane }
         private PendingAction _pendingAction = PendingAction.None;
         private string _pendingAxis = "Z";
+
+        // Staged data for plane import (survives while fractions dialog is open)
+        private double[,]? _pendingImportDoseMap;
+        private double _pendingImportSpacingX, _pendingImportSpacingY;
+        private double _pendingImportOriginX, _pendingImportOriginY, _pendingImportOriginZ;
+        private double _pendingImportSpacingYSign = 1.0;
+        private string _pendingImportOrientation = "Z";
+        private string _pendingImportFileName = "";
 
         public DicomControl()
         {
@@ -312,6 +320,14 @@ namespace OpticalDose
             ExtractPlaneButton.IsEnabled = true;
             ExportPlaneButton.IsEnabled = true;
             GoToMaxDoseBtn.IsEnabled = true;
+
+            // Auto-initialize isocenter to max-dose centroid as a reasonable default.
+            // This ensures RefX/RefY have valid values even if the user doesn't
+            // explicitly set the isocenter before extracting a plane.
+            // LoadRTPlan will override these with the true beam isocenter if available.
+            IsoXInput.Value = _xPositions![_maxDoseX];
+            IsoYInput.Value = _yPositions![_maxDoseY];
+            IsoZInput.Value = _zPositions![_maxDoseZ];
 
             UpdateAllViews();
         }
@@ -619,6 +635,7 @@ namespace OpticalDose
             
             if (_pendingAction == PendingAction.Extract) ExtractPlaneForAxis(_pendingAxis);
             else if (_pendingAction == PendingAction.Export) ExecuteExport(_pendingAxis);
+            else if (_pendingAction == PendingAction.ImportPlane) CompleteImportPlane();
             
             _pendingAction = PendingAction.None;
         }
@@ -752,8 +769,12 @@ namespace OpticalDose
                 SpacingY = spY,
                 OriginX = originX,
                 OriginY = originY,
-                RefX = _xPositions?[_currentX] ?? 0,
-                RefY = _yPositions?[_currentY] ?? 0,
+                // Reference point = isocenter projected onto the 2D plane axes.
+                // Axial (Z):    X-axis = patient X,  Y-axis = patient Y  → Ref = (IsoX, IsoY)
+                // Coronal (Y):  X-axis = patient X,  Y-axis = patient Z  → Ref = (IsoX, IsoZ)
+                // Sagittal (X): X-axis = patient Y,  Y-axis = patient Z  → Ref = (IsoY, IsoZ)
+                RefX = axis == "X" ? (IsoYInput.Value ?? 0) : (IsoXInput.Value ?? 0),
+                RefY = axis == "Z" ? (IsoYInput.Value ?? 0) : (IsoZInput.Value ?? 0),
                 RefZ = _zPositions?[_currentZ] ?? 0,
                 SpacingYSign = spYSign,
                 Suffix = suffix
@@ -798,6 +819,223 @@ namespace OpticalDose
 
         private void TpsMode_Checked(object sender, RoutedEventArgs e) => UpdateAllViews();
         private void IsoInput_ValueChanged(object sender, RoutedEventArgs e) => UpdateAllViews();
+
+        // ===== Import Pre-Extracted Plane DICOM (Single-Frame) =====
+
+        private void ImportPlaneDicom_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Filter = "DICOM files|*.dcm;*.dicom|All files|*.*",
+                Title = "Select a pre-extracted plane DICOM file"
+            };
+            if (dlg.ShowDialog() != true) return;
+
+            try
+            {
+                var dataset = DicomFile.Open(dlg.FileName).Dataset;
+
+                int rows = dataset.GetSingleValue<ushort>(DicomTag.Rows);
+                int cols = dataset.GetSingleValue<ushort>(DicomTag.Columns);
+                int frames = dataset.GetSingleValueOrDefault(DicomTag.NumberOfFrames, 1);
+
+                if (frames > 1)
+                {
+                    MessageBox.Show("This file contains multiple frames (3D volume).\nUse 'Load DICOM Set' instead.",
+                                    "Multi-Frame File", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var pixelSpacing = dataset.GetValues<double>(DicomTag.PixelSpacing);
+                double spacingX = pixelSpacing[1]; // column spacing
+                double spacingY = pixelSpacing[0]; // row spacing
+
+                double[] imagePos = { 0, 0, 0 };
+                if (dataset.Contains(DicomTag.ImagePositionPatient))
+                    imagePos = dataset.GetValues<double>(DicomTag.ImagePositionPatient);
+
+                // Detect plane orientation from ImageOrientationPatient
+                // Row direction = horizontal axis of image (column index increases)
+                // Col direction = vertical axis of image (row index increases)
+                double[] rowDir = { 1, 0, 0 };  // default: axial
+                double[] colDir = { 0, 1, 0 };
+                if (dataset.Contains(DicomTag.ImageOrientationPatient))
+                {
+                    var iop = dataset.GetValues<double>(DicomTag.ImageOrientationPatient);
+                    rowDir = new[] { iop[0], iop[1], iop[2] };
+                    colDir = new[] { iop[3], iop[4], iop[5] };
+                }
+
+                // Find dominant patient axis for each image direction
+                int rowAxis = Array.IndexOf(rowDir.Select(v => Math.Abs(v)).ToArray(),
+                                            rowDir.Select(v => Math.Abs(v)).Max());
+                int colAxis = Array.IndexOf(colDir.Select(v => Math.Abs(v)).ToArray(),
+                                            colDir.Select(v => Math.Abs(v)).Max());
+                int normalAxis = 3 - rowAxis - colAxis;
+
+                // Plane orientation: which patient axis is the normal
+                string planeOrientation = normalAxis == 2 ? "Z" : normalAxis == 1 ? "Y" : "X";
+                double spacingYSign = colDir[colAxis] < 0 ? -1.0 : 1.0;
+
+                // Map OriginX/Y to the correct physical axes of the 2D dose map
+                // OriginX = position along the row direction (horizontal axis)
+                // OriginY = position along the column direction (vertical axis)
+                double mappedOriginX = imagePos[rowAxis];
+                double mappedOriginY = imagePos[colAxis];
+
+                double doseGridScaling = dataset.GetSingleValueOrDefault(DicomTag.DoseGridScaling, 1.0);
+
+                // Read pixel data into dose array
+                double[,] doseMap = new double[rows, cols];
+
+                try
+                {
+                    if (dataset.GetSingleValueOrDefault(DicomTag.BitsAllocated, (ushort)16) <= 16)
+                    {
+                        var pixelData = dataset.GetValues<ushort>(DicomTag.PixelData);
+                        for (int r = 0; r < rows; r++)
+                            for (int c = 0; c < cols; c++)
+                                doseMap[r, c] = pixelData[r * cols + c];
+                    }
+                    else
+                    {
+                        var pixelData = dataset.GetValues<int>(DicomTag.PixelData);
+                        for (int r = 0; r < rows; r++)
+                            for (int c = 0; c < cols; c++)
+                                doseMap[r, c] = pixelData[r * cols + c];
+                    }
+                }
+                catch
+                {
+                    // Fallback: raw byte access
+                    var buffer = dataset.GetDicomItem<DicomElement>(DicomTag.PixelData).Buffer.Data;
+                    bool is32 = dataset.GetSingleValueOrDefault(DicomTag.BitsAllocated, (ushort)16) == 32;
+
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int idx = r * cols + c;
+                            if (is32) doseMap[r, c] = BitConverter.ToInt32(buffer, idx * 4);
+                            else doseMap[r, c] = BitConverter.ToUInt16(buffer, idx * 2);
+                        }
+                    }
+                }
+
+                // Convert raw pixel values to cGy using DoseGridScaling
+                for (int r = 0; r < rows; r++)
+                    for (int c = 0; c < cols; c++)
+                        doseMap[r, c] *= doseGridScaling * 100.0;
+
+                // Stage the imported data
+                _pendingImportDoseMap = doseMap;
+                _pendingImportSpacingX = spacingX;
+                _pendingImportSpacingY = spacingY;
+                _pendingImportOriginX = mappedOriginX;
+                _pendingImportOriginY = mappedOriginY;
+                _pendingImportOriginZ = imagePos[normalAxis];
+                _pendingImportSpacingYSign = spacingYSign;
+                _pendingImportOrientation = planeOrientation;
+                _pendingImportFileName = System.IO.Path.GetFileName(dlg.FileName);
+
+                // Update metadata panel
+                RdStatus.Text = $"\u25cf Plane: {_pendingImportFileName}";
+                RdStatus.Foreground = new SolidColorBrush(Colors.LimeGreen);
+                MetaPatient.Text = dataset.GetSingleValueOrDefault(DicomTag.PatientName, "N/A");
+                MetaPatientId.Text = dataset.GetSingleValueOrDefault(DicomTag.PatientID, "N/A");
+                MetaDim.Text = $"{cols} x {rows} x 1";
+                MetaSpacing.Text = $"{spacingX:F2}, {spacingY:F2} mm";
+
+                // Check for embedded fractions
+                bool fractionsFoundInFile = false;
+                if (dataset.Contains(DicomTag.FractionGroupSequence))
+                {
+                    var fgSeq = dataset.GetSequence(DicomTag.FractionGroupSequence);
+                    if (fgSeq.Items.Count > 0)
+                    {
+                        int fx = fgSeq.Items[0].GetSingleValueOrDefault(DicomTag.NumberOfFractionsPlanned, 1);
+                        DicomFractionsInput.Value = fx;
+                        fractionsFoundInFile = true;
+                    }
+                }
+
+                if (!fractionsFoundInFile)
+                {
+                    // Show the same fractions confirmation overlay used by 3D extract/export
+                    _pendingAction = PendingAction.ImportPlane;
+                    DialogFractionsInput.Value = DicomFractionsInput.Value;
+                    FractionsPromptOverlay.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    // Fractions found — complete immediately
+                    CompleteImportPlane();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to import plane DICOM: {ex.Message}", "Import Error");
+            }
+        }
+
+        private void CompleteImportPlane()
+        {
+            if (_pendingImportDoseMap == null) return;
+
+            int fractions = (int)(DicomFractionsInput.Value ?? 1);
+            int rows = _pendingImportDoseMap.GetLength(0);
+            int cols = _pendingImportDoseMap.GetLength(1);
+
+            // Normalize to per-fraction dose
+            if (fractions > 1)
+            {
+                for (int r = 0; r < rows; r++)
+                    for (int c = 0; c < cols; c++)
+                        _pendingImportDoseMap[r, c] /= fractions;
+            }
+
+            // Compute max dose
+            double maxDose = 0;
+            foreach (var d in _pendingImportDoseMap) if (d > maxDose) maxDose = d;
+
+            // Reference point = geometric center of the plane.
+            // For Eclipse-exported planar doses, the center IS the CAX/isocenter.
+            // OriginX/Y are already mapped to the correct physical axes.
+            // SpacingYSign accounts for inverted column directions (e.g., -Z in coronal).
+            double refX = _pendingImportOriginX + (cols / 2.0) * _pendingImportSpacingX;
+            double refY = _pendingImportOriginY + (rows / 2.0) * _pendingImportSpacingY * _pendingImportSpacingYSign;
+            double refZ = _pendingImportOriginZ;
+
+            // Update max dose display
+            MetaMaxDose.Text = $"{maxDose:F2} cGy";
+
+            // Fire the existing extraction event
+            DosePlaneExtracted?.Invoke(this, new DoseExtractedEventArgs
+            {
+                DoseMap = _pendingImportDoseMap,
+                SpacingX = _pendingImportSpacingX,
+                SpacingY = _pendingImportSpacingY,
+                MaxDose = maxDose,
+                FileName = _pendingImportFileName,
+                RefX = refX,
+                RefY = refY,
+                RefZ = refZ,
+                PlaneOrientation = _pendingImportOrientation,
+                OriginX = _pendingImportOriginX,
+                OriginY = _pendingImportOriginY,
+                SpacingYSign = _pendingImportSpacingYSign,
+                NumberOfFractions = fractions
+            });
+
+            string planeLabel = _pendingImportOrientation == "Z" ? "Axial" :
+                                _pendingImportOrientation == "Y" ? "Coronal" : "Sagittal";
+            StatusText.Text = $"Imported {planeLabel} plane: {_pendingImportFileName}";
+            MessageBox.Show($"Plane DICOM imported to Analysis.\n\nOrientation: {planeLabel}\nDimensions: {cols} x {rows}\nMax Dose: {maxDose:F1} cGy\nFractions: {fractions}\nRef Point: ({refX:F1}, {refY:F1}) mm",
+                            "Import Successful");
+
+            // Clear staged data
+            _pendingImportDoseMap = null;
+        }
 
         // ===== RT Structure Set Parsing =====
 
