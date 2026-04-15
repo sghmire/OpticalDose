@@ -55,6 +55,12 @@ namespace OpticalDose
         private bool _isUpdatingSliders = false;
         private bool _fractionsFound = false;
         
+        // MPR Crosshair Interaction
+        private bool _isDraggingCrosshair = false;
+        private Grid? _dragSourceGrid = null;
+        private bool _isMeasuringDicom = false;
+        private Point _measureStartPoint;
+
         private enum PendingAction { None, Extract, Export, ImportPlane }
         private PendingAction _pendingAction = PendingAction.None;
         private string _pendingAxis = "Z";
@@ -1444,5 +1450,210 @@ namespace OpticalDose
 
         private void StructureCombo_Changed(object sender, SelectionChangedEventArgs e) => DrawContours();
         private void ShowContours_Checked(object sender, RoutedEventArgs e) => DrawContours();
+
+        // --- MPR Crosshair Interaction Handlers ---
+
+        private void MeasureMode_Checked(object sender, RoutedEventArgs e)
+        {
+            if (MeasureModeToggle?.IsChecked != true)
+            {
+                AxialMeasureLine.Visibility = Visibility.Collapsed;
+                AxialMeasureText.Visibility = Visibility.Collapsed;
+                CoronalMeasureLine.Visibility = Visibility.Collapsed;
+                CoronalMeasureText.Visibility = Visibility.Collapsed;
+                SagittalMeasureLine.Visibility = Visibility.Collapsed;
+                SagittalMeasureText.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private Line GetMeasureLine(Grid grid) => grid.Name == "AxialViewGrid" ? AxialMeasureLine : (grid.Name == "CoronalViewGrid" ? CoronalMeasureLine : SagittalMeasureLine);
+        private TextBlock GetMeasureText(Grid grid) => grid.Name == "AxialViewGrid" ? AxialMeasureText : (grid.Name == "CoronalViewGrid" ? CoronalMeasureText : SagittalMeasureText);
+
+        private void MprView_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (_doseVolume == null || sender is not Grid grid) return;
+            
+            if (MeasureModeToggle?.IsChecked == true)
+            {
+                _isMeasuringDicom = true;
+                _dragSourceGrid = grid;
+                grid.CaptureMouse();
+                _measureStartPoint = e.GetPosition(grid);
+                
+                Line ml = GetMeasureLine(grid);
+                TextBlock mt = GetMeasureText(grid);
+                
+                ml.X1 = ml.X2 = _measureStartPoint.X;
+                ml.Y1 = ml.Y2 = _measureStartPoint.Y;
+                ml.Visibility = Visibility.Visible;
+                mt.Visibility = Visibility.Visible;
+                return;
+            }
+
+            _isDraggingCrosshair = true;
+            _dragSourceGrid = grid;
+            grid.CaptureMouse();
+            
+            UpdateCrosshairFromMouse(e.GetPosition(grid));
+        }
+
+        private void MprView_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (_isMeasuringDicom)
+            {
+                _isMeasuringDicom = false;
+                if (_dragSourceGrid != null)
+                {
+                    _dragSourceGrid.ReleaseMouseCapture();
+                    _dragSourceGrid = null;
+                }
+                return;
+            }
+
+            if (!_isDraggingCrosshair) return;
+            
+            _isDraggingCrosshair = false;
+            if (_dragSourceGrid != null)
+            {
+                _dragSourceGrid.ReleaseMouseCapture();
+                _dragSourceGrid = null;
+            }
+        }
+
+        private void MprView_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (_isMeasuringDicom && _dragSourceGrid != null)
+            {
+                Point pos = e.GetPosition(_dragSourceGrid);
+                Line measureLine = GetMeasureLine(_dragSourceGrid);
+                TextBlock measureText = GetMeasureText(_dragSourceGrid);
+                
+                measureLine.X2 = pos.X;
+                measureLine.Y2 = pos.Y;
+                
+                double dist = CalculateMprDistance(_dragSourceGrid, _measureStartPoint, pos);
+                measureText.Text = $"{dist:F1} mm";
+                
+                Canvas.SetLeft(measureText, (measureLine.X1 + measureLine.X2) / 2);
+                Canvas.SetTop(measureText, (measureLine.Y1 + measureLine.Y2) / 2 - 20);
+                return;
+            }
+
+            if (!_isDraggingCrosshair || _dragSourceGrid == null || _doseVolume == null) return;
+            
+            UpdateCrosshairFromMouse(e.GetPosition(_dragSourceGrid));
+        }
+
+        private double CalculateMprDistance(Grid grid, Point p1, Point p2)
+        {
+            int dCols = _doseVolume!.GetLength(2), dRows = _doseVolume.GetLength(1), dFrames = _doseVolume.GetLength(0);
+            double w = grid.ActualWidth, h = grid.ActualHeight;
+            double fx1, fy1, fx2, fy2;
+            double zSpacing = (_zPositions != null && _zPositions.Length > 1) ? Math.Abs(_zPositions[1] - _zPositions[0]) : _pixelSpacingX;
+
+            if (grid.Name == "AxialViewGrid") {
+                CalculateFractionalPos(w, h, dCols, dRows, p1, out fx1, out fy1);
+                CalculateFractionalPos(w, h, dCols, dRows, p2, out fx2, out fy2);
+                double mmX = (fx2 - fx1) * dCols * _pixelSpacingX;
+                double mmY = (fy2 - fy1) * dRows * _pixelSpacingY;
+                return Math.Sqrt(mmX * mmX + mmY * mmY);
+            }
+            else if (grid.Name == "CoronalViewGrid") {
+                CalculateFractionalPos(w, h, dCols, dFrames, p1, out fx1, out fy1);
+                CalculateFractionalPos(w, h, dCols, dFrames, p2, out fx2, out fy2);
+                double mmX = (fx2 - fx1) * dCols * _pixelSpacingX;
+                double mmZ = (fy2 - fy1) * dFrames * zSpacing;
+                return Math.Sqrt(mmX * mmX + mmZ * mmZ);
+            }
+            else {
+                CalculateFractionalPos(w, h, dRows, dFrames, p1, out fx1, out fy1);
+                CalculateFractionalPos(w, h, dRows, dFrames, p2, out fx2, out fy2);
+                double mmY = (fx2 - fx1) * dRows * _pixelSpacingY;
+                double mmZ = (fy2 - fy1) * dFrames * zSpacing;
+                return Math.Sqrt(mmY * mmY + mmZ * mmZ);
+            }
+        }
+
+        private void UpdateCrosshairFromMouse(Point mousePos)
+        {
+            if (_dragSourceGrid == null || _doseVolume == null) return;
+
+            int dCols = _doseVolume.GetLength(2);
+            int dRows = _doseVolume.GetLength(1);
+            int dFrames = _doseVolume.GetLength(0);
+
+            double w = _dragSourceGrid.ActualWidth;
+            double h = _dragSourceGrid.ActualHeight;
+            if (w <= 0 || h <= 0) return;
+
+            double fx = 0, fy = 0; // Fractional coordinates [0, 1] mapped to sliders
+
+            if (_dragSourceGrid.Name == "AxialViewGrid")
+            {
+                // Axial (XY) maps X->Col, Y->Row
+                CalculateFractionalPos(w, h, dCols, dRows, mousePos, out fx, out fy);
+                XSlider.Value = fx * Math.Max(XSlider.Maximum, 1);
+                YSlider.Value = fy * Math.Max(YSlider.Maximum, 1);
+            }
+            else if (_dragSourceGrid.Name == "CoronalViewGrid")
+            {
+                // Coronal (XZ) maps X->Col, Y->Z (inverted display)
+                CalculateFractionalPos(w, h, dCols, dFrames, mousePos, out fx, out fy);
+                XSlider.Value = fx * Math.Max(XSlider.Maximum, 1);
+                ZSlider.Value = (1.0 - fy) * Math.Max(ZSlider.Maximum, 1); // Z is inverted in display
+            }
+            else if (_dragSourceGrid.Name == "SagittalViewGrid")
+            {
+                // Sagittal (YZ) maps X->Row, Y->Z (inverted display)
+                CalculateFractionalPos(w, h, dRows, dFrames, mousePos, out fx, out fy);
+                YSlider.Value = fx * Math.Max(YSlider.Maximum, 1);
+                ZSlider.Value = (1.0 - fy) * Math.Max(ZSlider.Maximum, 1); // Z is inverted in display
+            }
+
+            // Note: Assigning to .Value automatically calls Slider_ValueChanged which updates _currentX/Y/Z and calls UpdateAllViews().
+        }
+
+        private void CalculateFractionalPos(double ctrlW, double ctrlH, int imgW, int imgH, Point mousePos, out double fx, out double fy)
+        {
+            double imgAsp = (double)imgW / imgH;
+            double canAsp = ctrlW / ctrlH;
+            double rw, rh, ox, oy;
+
+            if (imgAsp > canAsp)
+            {
+                rw = ctrlW;
+                rh = ctrlW / imgAsp;
+                ox = 0;
+                oy = (ctrlH - rh) / 2;
+            }
+            else
+            {
+                rh = ctrlH;
+                rw = ctrlH * imgAsp;
+                ox = (ctrlW - rw) / 2;
+                oy = 0;
+            }
+
+            // Un-offset relative to image
+            double xInImg = mousePos.X - ox;
+            double yInImg = mousePos.Y - oy;
+
+            fx = Math.Clamp(xInImg / rw, 0.0, 1.0);
+            fy = Math.Clamp(yInImg / rh, 0.0, 1.0);
+        }
+
+        private void MprView_MouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            if (_doseVolume == null || sender is not Grid grid) return;
+
+            int delta = e.Delta > 0 ? 1 : -1;
+
+            if (grid.Name == "AxialViewGrid")
+                ZSlider.Value += delta;
+            else if (grid.Name == "CoronalViewGrid")
+                YSlider.Value += delta;
+            else if (grid.Name == "SagittalViewGrid")
+                XSlider.Value += delta;
+        }
     }
 }

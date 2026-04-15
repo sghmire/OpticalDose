@@ -55,7 +55,10 @@
 
                 <!-- Navigation Sliders -->
                 <StackPanel Grid.Row="1" Margin="0,0,0,15">
-                    <TextBlock Text="Multi-Planar Navigation" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
+                    <Grid Margin="0,0,0,10">
+                        <TextBlock Text="Multi-Planar Navigation" Style="{StaticResource DosimetrySectionHeader}" VerticalAlignment="Center" />
+                        <ui:ToggleSwitch x:Name="MeasureModeToggle" Content="Measure Mode" HorizontalAlignment="Right" IsChecked="False" Click="MeasureMode_Checked" />
+                    </Grid>
 
                     <!-- Z Slider (Axial) -->
                     <TextBlock Text="Z-Axis (Superior/Inferior)" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -195,36 +198,54 @@
 
                 <!-- Top Left: Axial -->
                 <Border Grid.Row="0" Grid.Column="0" BorderBrush="#33AAAAAA" BorderThickness="0,0,1,1" Margin="2">
-                    <Grid Background="#101010">
+                    <Grid x:Name="AxialViewGrid" Background="#101010" MouseLeftButtonDown="MprView_MouseLeftButtonDown" MouseLeftButtonUp="MprView_MouseLeftButtonUp" MouseMove="MprView_MouseMove" MouseWheel="MprView_MouseWheel">
                         <TextBlock Text="AXIAL (XY)" Foreground="#88FFFFFF" FontSize="10" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="5" Panel.ZIndex="10" />
                         <Image x:Name="AxialImage" Stretch="Uniform" />
                         <Canvas x:Name="AxialCanvas" IsHitTestVisible="False">
                             <Line x:Name="AxialLineX" Stroke="Cyan" StrokeThickness="0.5" StrokeDashArray="4,2" />
                             <Line x:Name="AxialLineY" Stroke="Yellow" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                            <Line x:Name="AxialMeasureLine" Stroke="Lime" StrokeThickness="1.5" Visibility="Collapsed" />
+                            <TextBlock x:Name="AxialMeasureText" Foreground="Lime" FontSize="12" FontWeight="Bold" Visibility="Collapsed">
+                                <TextBlock.Effect>
+                                    <DropShadowEffect Color="Black" BlurRadius="3" ShadowDepth="1" Opacity="0.9" />
+                                </TextBlock.Effect>
+                            </TextBlock>
                         </Canvas>
                     </Grid>
                 </Border>
 
                 <!-- Top Right: Coronal -->
                 <Border Grid.Row="0" Grid.Column="1" BorderBrush="#33AAAAAA" BorderThickness="0,0,0,1" Margin="2">
-                    <Grid Background="#101010">
+                    <Grid x:Name="CoronalViewGrid" Background="#101010" MouseLeftButtonDown="MprView_MouseLeftButtonDown" MouseLeftButtonUp="MprView_MouseLeftButtonUp" MouseMove="MprView_MouseMove" MouseWheel="MprView_MouseWheel">
                         <TextBlock Text="CORONAL (XZ)" Foreground="#88FFFFFF" FontSize="10" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="5" Panel.ZIndex="10" />
                         <Image x:Name="CoronalImage" Stretch="Uniform" />
                         <Canvas x:Name="CoronalCanvas" IsHitTestVisible="False">
                             <Line x:Name="CoronalLineX" Stroke="Cyan" StrokeThickness="0.5" StrokeDashArray="4,2" />
                             <Line x:Name="CoronalLineZ" Stroke="Magenta" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                            <Line x:Name="CoronalMeasureLine" Stroke="Lime" StrokeThickness="1.5" Visibility="Collapsed" />
+                            <TextBlock x:Name="CoronalMeasureText" Foreground="Lime" FontSize="12" FontWeight="Bold" Visibility="Collapsed">
+                                <TextBlock.Effect>
+                                    <DropShadowEffect Color="Black" BlurRadius="3" ShadowDepth="1" Opacity="0.9" />
+                                </TextBlock.Effect>
+                            </TextBlock>
                         </Canvas>
                     </Grid>
                 </Border>
 
                 <!-- Bottom Left: Sagittal -->
                 <Border Grid.Row="1" Grid.Column="0" BorderBrush="#33AAAAAA" BorderThickness="0,0,1,0" Margin="2">
-                    <Grid Background="#101010">
+                    <Grid x:Name="SagittalViewGrid" Background="#101010" MouseLeftButtonDown="MprView_MouseLeftButtonDown" MouseLeftButtonUp="MprView_MouseLeftButtonUp" MouseMove="MprView_MouseMove" MouseWheel="MprView_MouseWheel">
                         <TextBlock Text="SAGITTAL (YZ)" Foreground="#88FFFFFF" FontSize="10" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="5" Panel.ZIndex="10" />
                         <Image x:Name="SagittalImage" Stretch="Uniform" />
                         <Canvas x:Name="SagittalCanvas" IsHitTestVisible="False">
                             <Line x:Name="SagittalLineY" Stroke="Yellow" StrokeThickness="0.5" StrokeDashArray="4,2" />
                             <Line x:Name="SagittalLineZ" Stroke="Magenta" StrokeThickness="0.5" StrokeDashArray="4,2" />
+                            <Line x:Name="SagittalMeasureLine" Stroke="Lime" StrokeThickness="1.5" Visibility="Collapsed" />
+                            <TextBlock x:Name="SagittalMeasureText" Foreground="Lime" FontSize="12" FontWeight="Bold" Visibility="Collapsed">
+                                <TextBlock.Effect>
+                                    <DropShadowEffect Color="Black" BlurRadius="3" ShadowDepth="1" Opacity="0.9" />
+                                </TextBlock.Effect>
+                            </TextBlock>
                         </Canvas>
                     </Grid>
                 </Border>
