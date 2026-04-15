@@ -55,7 +55,7 @@ namespace OpticalDose
         public AppSettings _settings = new AppSettings();
 
         // Measurement State
-        private enum MeasurementMode { None, ROIDose, Distance, Area }
+        private enum MeasurementMode { None, ROIDose, Distance, Area, Crosshairs }
         private MeasurementMode _activeMeasurementMode = MeasurementMode.None;
         private bool _isAreaRectMode = false;
         private List<Point> _measurementPoints = new();
@@ -2310,6 +2310,21 @@ namespace OpticalDose
         {
             UpdateStatusCoordinates(e);
 
+            if (_activeMeasurementMode == MeasurementMode.Crosshairs)
+            {
+                Point pos = e.GetPosition(SelectionCanvas);
+                SelectionCrosshairH.X1 = 0;
+                SelectionCrosshairH.X2 = SelectionCanvas.ActualWidth;
+                SelectionCrosshairH.Y1 = SelectionCrosshairH.Y2 = pos.Y;
+                SelectionCrosshairH.Visibility = Visibility.Visible;
+
+                SelectionCrosshairV.X1 = SelectionCrosshairV.X2 = pos.X;
+                SelectionCrosshairV.Y1 = 0;
+                SelectionCrosshairV.Y2 = SelectionCanvas.ActualHeight;
+                SelectionCrosshairV.Visibility = Visibility.Visible;
+                return;
+            }
+
             if (_isPickingCenter)
             {
                 Point pos = e.GetPosition(SelectionCanvas);
@@ -2644,6 +2659,26 @@ namespace OpticalDose
             {
                 SelectionRect.Visibility = Visibility.Collapsed;
             }
+        }
+
+        private void CrosshairsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (MainDisplayImage.Source == null) return;
+
+            ResetToolState();
+
+            _activeMeasurementMode = MeasurementMode.Crosshairs;
+            _isMeasurementMode = true;
+            _isSelectingROI = true; // Keeps the SelectionCanvas active
+
+            ShowToolOverlay("Tool: Crosshairs");
+            StatusText.Text = "Measurement Mode: Crosshairs";
+            StatusIndicator.Background = new SolidColorBrush(Colors.MediumPurple);
+
+            SelectionRect.Visibility = Visibility.Collapsed;
+            MeasurementLine.Visibility = Visibility.Collapsed;
+            MeasurementPolyline.Visibility = Visibility.Collapsed;
+            MeasurementLabel.Visibility = Visibility.Collapsed;
         }
 
         private async System.Threading.Tasks.Task PerformROIExtraction()

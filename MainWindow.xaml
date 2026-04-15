@@ -293,6 +293,7 @@
                                             <ui:Button x:Name="ProfileButton" Content="Profiles" Icon="{ui:SymbolIcon Line24}" HorizontalAlignment="Stretch" Margin="2" Click="ProfileButton_Click" />
                                             <ui:Button x:Name="DistanceButton" Content="Distance" Icon="{ui:SymbolIcon Line24}" HorizontalAlignment="Stretch" Margin="2" Click="Measurement_Click" />
                                             <ui:Button x:Name="AreaButton" Content="Area" Icon="{ui:SymbolIcon DocumentTable24}" HorizontalAlignment="Stretch" Margin="2" Click="Measurement_Click" />
+                                            <ui:Button x:Name="CrosshairsButton" Content="Crosshairs" Icon="{ui:SymbolIcon Add24}" HorizontalAlignment="Stretch" Margin="2" Click="CrosshairsButton_Click" />
                                         </UniformGrid>
 
                                         <TextBlock Text="Color Map" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,5" />

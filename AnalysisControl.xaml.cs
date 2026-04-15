@@ -242,8 +242,9 @@ namespace OpticalDose
 
                 var sig = ProfilePlot.Plot.Add.Scatter(x, planData);
                 sig.LegendText = "Planned (DICOM)";
-                sig.Color = ScottPlot.Color.FromHex("#1E90FF"); // DodgerBlue
-                sig.LineWidth = 2.0f;
+                sig.Color = ScottPlot.Color.FromHex("#0078D4"); // Blue
+                sig.LineWidth = 1.5f;
+                sig.MarkerSize = 0;
             }
 
             if (_filmDose != null)
@@ -259,8 +260,9 @@ namespace OpticalDose
                 double[] x = Enumerable.Range(0, filmProfile.Length).Select(i => i * spacing + fOrg + shift).ToArray();
                 var sig = ProfilePlot.Plot.Add.Scatter(x, scaledMeasured);
                 sig.LegendText = "Measured (Film)";
-                sig.Color = ScottPlot.Color.FromHex("#00FF00"); // Lime
+                sig.Color = ScottPlot.Color.FromHex("#E81123"); // Red
                 sig.LineWidth = 1.5f;
+                sig.MarkerSize = 0;
             }
 
             ProfilePlot.Plot.Legend.IsVisible = true;
