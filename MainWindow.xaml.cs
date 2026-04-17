@@ -1068,15 +1068,9 @@ namespace OpticalDose
 
         private void FieldSizeMenu_Click(object sender, RoutedEventArgs e)
         {
-            if (_doseMap == null)
-            {
-                System.Windows.MessageBox.Show("Please generate a dose map first (Convert to Dose).", "No Dose Map");
-                return;
-            }
-
             try
             {
-                var dlg = new FieldSizeWindow(_doseMap, _dpiX, _settings, MainDisplayImage.Source as BitmapSource)
+                var dlg = new FieldSizeWindow(_doseMap ?? _redChannel, _dpiX, _settings, MainDisplayImage.Source as BitmapSource)
                 {
                     Owner = this
                 };

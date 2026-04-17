@@ -17,10 +17,10 @@ namespace OpticalDose
 {
     public partial class FieldSizeWindow : FluentWindow
     {
-        private readonly double[,] _doseMap;
-        private readonly double _dpi;
-        private readonly double _mmPerPixelX;
-        private readonly double _mmPerPixelY;
+        private double[,] _doseMap;
+        private double _dpi;
+        private double _mmPerPixelX;
+        private double _mmPerPixelY;
         private AppSettings _settings;
 
         // Cached results for reporting
@@ -36,10 +36,10 @@ namespace OpticalDose
         private double _rectStartLeft;
         private double _rectStartTop;
 
-        public FieldSizeWindow(double[,] doseMap, double dpi, AppSettings settings, BitmapSource imageSource = null)
+        public FieldSizeWindow(double[,]? doseMap, double dpi, AppSettings settings, BitmapSource? imageSource = null)
         {
             InitializeComponent();
-            _doseMap = doseMap ?? throw new ArgumentNullException(nameof(doseMap));
+            _doseMap = doseMap ?? new double[100, 100]; // Placeholder until user loads a film
             _dpi = dpi <= 0 ? 72.0 : dpi;
             _settings = settings;
             _mmPerPixelX = 25.4 / _dpi;
@@ -48,8 +48,8 @@ namespace OpticalDose
             if (imageSource != null)
             {
                 FilmImage.Source = imageSource;
-                FilmImage.Width = doseMap.GetLength(1);
-                FilmImage.Height = doseMap.GetLength(0);
+                FilmImage.Width = _doseMap.GetLength(1);
+                FilmImage.Height = _doseMap.GetLength(0);
             }
 
             // Load last settings
@@ -314,9 +314,17 @@ namespace OpticalDose
 
             double stepX = _mmPerPixelX;
             double stepY = _mmPerPixelY;
+
+            // Determine profile span from the TargetRect ROI + 20% margin for penumbra
+            double roiWidthMm = TargetRect.Visibility == Visibility.Visible ? TargetRect.Width * stepX : w * stepX;
+            double roiHeightMm = TargetRect.Visibility == Visibility.Visible ? TargetRect.Height * stepY : h * stepY;
+            double marginFraction = 0.20;
+
+            double xSpanMm = roiWidthMm * (1.0 + 2.0 * marginFraction);
+            double ySpanMm = roiHeightMm * (1.0 + 2.0 * marginFraction);
             
-            // X profiles span width 'w' physically, yielding 'w' points.
-            int numPointsX = w;
+            // X profiles span the ROI width + margin
+            int numPointsX = Math.Max(10, (int)(xSpanMm / stepX) + 1);
             int numProfilesX = plateauY <= 0 ? 1 : Math.Max(1, (int)(plateauY / stepY) + 1);
 
             double[][] xProfiles = new double[numProfilesX][];
@@ -338,7 +346,7 @@ namespace OpticalDose
                     double px = pixelCenterX + physX / stepX;
                     double py = pixelCenterY + physY / stepY;
 
-                    profile[j] = InterpolateBilinear(_doseMap, px, py);
+                    profile[j] = PixelToDose(InterpolateBilinear(_doseMap, px, py));
                 }
                 xProfiles[i] = profile;
 
@@ -358,8 +366,8 @@ namespace OpticalDose
                 rightX[i] = (idxR >= smoothedProfile.Length - 1) ? xCoords[^1] : FitLogisticEdge(smoothedProfile, xCoords, idxR, idxR + 1, threshold, peak);
             }
 
-            // Y profiles
-            int numPointsY = h;
+            // Y profiles span the ROI height + margin
+            int numPointsY = Math.Max(10, (int)(ySpanMm / stepY) + 1);
             int numProfilesY = plateauX <= 0 ? 1 : Math.Max(1, (int)(plateauX / stepX) + 1);
 
             double[][] yProfiles = new double[numProfilesY][];
@@ -381,7 +389,7 @@ namespace OpticalDose
                     double px = pixelCenterX + physX / stepX;
                     double py = pixelCenterY + physY / stepY;
 
-                    profile[j] = InterpolateBilinear(_doseMap, px, py);
+                    profile[j] = PixelToDose(InterpolateBilinear(_doseMap, px, py));
                 }
                 yProfiles[i] = profile;
 
@@ -430,6 +438,9 @@ namespace OpticalDose
             
             if (leftY.Length > 0 && rightY.Length > 0)
                 PlotProfiles(YPlot, yCoords, yProfiles, leftY.Average(), rightY.Average(), method, "YY Profile", meanY, stdY, plateauY / 2.0);
+
+            // Update the image to a Jet colormap if calibration is active
+            UpdateJetHeatmap();
         }
 
         private static double[] GetPlateauSlice(double[] profile, double[] coords, double plateauWidth, double center)
@@ -727,5 +738,425 @@ namespace OpticalDose
             rtb.Freeze();
             return rtb;
         }
+
+        #region Quick 3-Point Calibration Logic
+        
+        private double[,]? _activeExtractMap;
+        private BitmapSource? _originalImageSource;
+        private double[]? _quickCalCoeffs; // Stored calibration curve coefficients (degree 2)
+
+        private void Extract0MU_Click(object sender, RoutedEventArgs e) => ExtractROI(QD0Box);
+        private void Extract300MU_Click(object sender, RoutedEventArgs e) => ExtractROI(QD300Box);
+        private void Extract600MU_Click(object sender, RoutedEventArgs e) => ExtractROI(QD600Box);
+
+        private void ExtractROI(System.Windows.Controls.TextBox targetBox)
+        {
+            double[,] extractSource = _activeExtractMap ?? _doseMap;
+
+            if (TargetRect.Visibility != Visibility.Visible)
+            {
+                System.Windows.MessageBox.Show("Please apply the Target Square over the patch you want to measure first.", "Setup Target");
+                return;
+            }
+            
+            int left = (int)Canvas.GetLeft(TargetRect);
+            int top = (int)Canvas.GetTop(TargetRect);
+            int width = (int)TargetRect.Width;
+            int height = (int)TargetRect.Height;
+            
+            double avgOd = CalculateAverageOD(extractSource, left, top, width, height);
+            targetBox.Text = avgOd.ToString("F6");
+            
+            if (StatusText != null) StatusText.Text = $"Extracted OD = {avgOd:F6} from ROI ({width}x{height} px)";
+        }
+
+        /// <summary>
+        /// Computes the average Optical Density inside the specified rectangle.
+        /// Raw 16-bit pixel values are converted to OD = -log10(pixel / 65535).
+        /// </summary>
+        private double CalculateAverageOD(double[,] array, int left, int top, int width, int height)
+        {
+            int arrH = array.GetLength(0);
+            int arrW = array.GetLength(1);
+            
+            left = Math.Max(0, Math.Min(left, arrW - 1));
+            top = Math.Max(0, Math.Min(top, arrH - 1));
+            int right = Math.Min(left + width, arrW);
+            int bottom = Math.Min(top + height, arrH);
+
+            if (right <= left || bottom <= top) return 0;
+
+            // Determine if data is raw 16-bit by sampling the center of the ROI
+            // Raw 16-bit scanner values are typically in the range 1000-65535
+            // OD values are typically 0.0 - 3.0
+            int sampleY = (top + bottom) / 2;
+            int sampleX = (left + right) / 2;
+            bool isRaw = array[sampleY, sampleX] > 100; 
+            
+            double sum = 0;
+            int count = 0;
+            
+            for (int y = top; y < bottom; y++)
+            {
+                for (int x = left; x < right; x++)
+                {
+                    double val = array[y, x];
+                    if (isRaw)
+                    {
+                        val = Math.Clamp(val, 1, 65535);
+                        sum += -Math.Log10(val / 65535.0);
+                    }
+                    else
+                    {
+                        sum += val; // Already OD
+                    }
+                    count++;
+                }
+            }
+            return count > 0 ? sum / count : 0;
+        }
+
+        private void LoadCalScan_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Image files|*.tif;*.tiff;*.png;*.jpg;*.bmp|All files|*.*" };
+            if (dlg.ShowDialog() == true)
+            {
+                try
+                {
+                    var bmp = new BitmapImage(new Uri(dlg.FileName));
+                    int w = bmp.PixelWidth;
+                    int h = bmp.PixelHeight;
+
+                    double newDpiX = bmp.DpiX > 0 ? bmp.DpiX : 72.0;
+                    double newDpiY = bmp.DpiY > 0 ? bmp.DpiY : 72.0;
+
+                    // If it's a TIFF, prefer LibTiff for precise physical scan resolution
+                    string ext = System.IO.Path.GetExtension(dlg.FileName).ToLower();
+                    if (ext == ".tif" || ext == ".tiff")
+                    {
+                        try
+                        {
+                            using (BitMiracle.LibTiff.Classic.Tiff tiffImg = BitMiracle.LibTiff.Classic.Tiff.Open(dlg.FileName, "r"))
+                            {
+                                if (tiffImg != null)
+                                {
+                                    BitMiracle.LibTiff.Classic.FieldValue[] res = tiffImg.GetField(BitMiracle.LibTiff.Classic.TiffTag.XRESOLUTION);
+                                    if (res != null)
+                                    {
+                                        float xRes = res[0].ToFloat();
+                                        res = tiffImg.GetField(BitMiracle.LibTiff.Classic.TiffTag.RESOLUTIONUNIT);
+                                        short unit = (res != null) ? res[0].ToShort() : (short)2; // 2 = Inch
+
+                                        if (unit == 3) // Centimeter
+                                        {
+                                            newDpiX = xRes * 2.54;
+                                            newDpiY = xRes * 2.54;
+                                        }
+                                        else
+                                        {
+                                            newDpiX = xRes;
+                                            newDpiY = xRes;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch { /* Fallback to WPF Dpi */ }
+                    }
+
+                    _dpi = (newDpiX + newDpiY) / 2.0;
+                    if (_dpi <= 0) _dpi = 72; // final fallback check
+                    _mmPerPixelX = 25.4 / newDpiX;
+                    _mmPerPixelY = 25.4 / newDpiY;
+                    
+                    int bytesPerPixel = bmp.Format.BitsPerPixel / 8;
+                    if (bytesPerPixel == 0) throw new Exception("Unsupported pixel format.");
+                    
+                    int stride = w * bytesPerPixel;
+                    var rawBytes = new byte[h * stride];
+                    bmp.CopyPixels(rawBytes, stride, 0);
+                    
+                    double[,] channel = new double[h, w];
+                    for (int y = 0; y < h; y++)
+                    {
+                        for (int x = 0; x < w; x++)
+                        {
+                            int idx = y * stride + x * bytesPerPixel;
+                            if (bytesPerPixel >= 6) // true 48-bit RGB (16-bit per channel)
+                            {
+                                channel[y, x] = BitConverter.ToUInt16(rawBytes, idx);
+                            }
+                            else if (bytesPerPixel >= 3) // 24-bit RGB or 32-bit BGRA
+                            {
+                                byte r = bytesPerPixel == 3 ? rawBytes[idx + 0] : rawBytes[idx + 2];
+                                channel[y, x] = r * 257.0; // scale up to 16-bit equivalent
+                            }
+                            else if (bytesPerPixel == 2) // 16-bit Gray
+                            {
+                                channel[y, x] = BitConverter.ToUInt16(rawBytes, idx);
+                            }
+                            else
+                            {
+                                channel[y, x] = rawBytes[idx] * 257.0;
+                            }
+                        }
+                    }
+
+                    if (_originalImageSource == null) _originalImageSource = FilmImage.Source as BitmapSource;
+                    
+                    _activeExtractMap = channel;
+                    FilmImage.Source = bmp;
+                    FilmImage.Width = w;
+                    FilmImage.Height = h;
+                    
+                    if (StatusText != null) StatusText.Text = $"Cal scan loaded ({w}x{h}). Position target and Extract.";
+                    
+                    if (TargetRect.Visibility != Visibility.Visible)
+                        ApplyReticleSize_Click(null, null);
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show("Error loading scan: " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Converts a raw pixel value to calibrated dose using the stored Quick Cal curve.
+        /// If no calibration is stored, returns the raw value unchanged.
+        /// </summary>
+        private double PixelToDose(double rawValue)
+        {
+            if (_quickCalCoeffs == null) return rawValue;
+            
+            double od;
+            if (rawValue > 100) // raw 16-bit
+            {
+                rawValue = Math.Clamp(rawValue, 1, 65535);
+                od = -Math.Log10(rawValue / 65535.0);
+            }
+            else
+            {
+                od = rawValue; // already OD
+            }
+            return Math.Max(0, FittingMath.PolyVal(_quickCalCoeffs, od));
+        }
+
+        private void ReloadOriginalImage_Click(object sender, RoutedEventArgs e)
+        {
+            if (_originalImageSource != null)
+            {
+                _activeExtractMap = null;
+                FilmImage.Source = _originalImageSource;
+                FilmImage.Width = _doseMap.GetLength(1);
+                FilmImage.Height = _doseMap.GetLength(0);
+                if (StatusText != null) StatusText.Text = "Original image restored.";
+            }
+        }
+
+        /// <summary>
+        /// Loads a new analysis film into the FieldSize window, replacing
+        /// the current _doseMap and image display. The saved calibration curve is preserved.
+        /// </summary>
+        private void LoadAnalysisFilm_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Image files|*.tif;*.tiff;*.png;*.jpg;*.bmp|All files|*.*" };
+            if (dlg.ShowDialog() == true)
+            {
+                try
+                {
+                    var bmp = new BitmapImage(new Uri(dlg.FileName));
+                    int w = bmp.PixelWidth;
+                    int h = bmp.PixelHeight;
+                    
+                    double newDpiX = bmp.DpiX > 0 ? bmp.DpiX : 72.0;
+                    double newDpiY = bmp.DpiY > 0 ? bmp.DpiY : 72.0;
+
+                    // If it's a TIFF, prefer LibTiff for precise physical scan resolution
+                    string ext = System.IO.Path.GetExtension(dlg.FileName).ToLower();
+                    if (ext == ".tif" || ext == ".tiff")
+                    {
+                        try
+                        {
+                            using (BitMiracle.LibTiff.Classic.Tiff tiffImg = BitMiracle.LibTiff.Classic.Tiff.Open(dlg.FileName, "r"))
+                            {
+                                if (tiffImg != null)
+                                {
+                                    BitMiracle.LibTiff.Classic.FieldValue[] res = tiffImg.GetField(BitMiracle.LibTiff.Classic.TiffTag.XRESOLUTION);
+                                    if (res != null)
+                                    {
+                                        float xRes = res[0].ToFloat();
+                                        res = tiffImg.GetField(BitMiracle.LibTiff.Classic.TiffTag.RESOLUTIONUNIT);
+                                        short unit = (res != null) ? res[0].ToShort() : (short)2; // 2 = Inch
+
+                                        if (unit == 3) // Centimeter
+                                        {
+                                            newDpiX = xRes * 2.54;
+                                            newDpiY = xRes * 2.54;
+                                        }
+                                        else
+                                        {
+                                            newDpiX = xRes;
+                                            newDpiY = xRes;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch { /* Fallback to WPF Dpi */ }
+                    }
+
+                    _dpi = (newDpiX + newDpiY) / 2.0;
+                    if (_dpi <= 0) _dpi = 72; // final fallback check
+                    _mmPerPixelX = 25.4 / newDpiX;
+                    _mmPerPixelY = 25.4 / newDpiY;
+                    
+                    int bytesPerPixel = bmp.Format.BitsPerPixel / 8;
+                    if (bytesPerPixel == 0) throw new Exception("Unsupported pixel format.");
+                    
+                    int stride = w * bytesPerPixel;
+                    var rawBytes = new byte[h * stride];
+                    bmp.CopyPixels(rawBytes, stride, 0);
+                    
+                    var newMap = new double[h, w];
+                    for (int y = 0; y < h; y++)
+                    {
+                        for (int x = 0; x < w; x++)
+                        {
+                            int idx = y * stride + x * bytesPerPixel;
+                            if (bytesPerPixel >= 6)
+                                newMap[y, x] = BitConverter.ToUInt16(rawBytes, idx);
+                            else if (bytesPerPixel >= 3)
+                            {
+                                byte r = bytesPerPixel == 3 ? rawBytes[idx + 0] : rawBytes[idx + 2];
+                                newMap[y, x] = r * 257.0;
+                            }
+                            else if (bytesPerPixel == 2)
+                                newMap[y, x] = BitConverter.ToUInt16(rawBytes, idx);
+                            else
+                                newMap[y, x] = rawBytes[idx] * 257.0;
+                        }
+                    }
+
+                    // Replace _doseMap with the new film data
+                    _doseMap = newMap;
+
+                    _originalImageSource = bmp;
+                    _activeExtractMap = null;
+                    FilmImage.Source = bmp;
+                    FilmImage.Width = w;
+                    FilmImage.Height = h;
+                    
+                    string calStatus = _quickCalCoeffs != null ? " Cal curve ready." : "";
+                    if (StatusText != null) StatusText.Text = $"Analysis film loaded ({w}x{h}).{calStatus}";
+                    
+                    if (TargetRect.Visibility != Visibility.Visible)
+                        ApplyReticleSize_Click(null, null);
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show("Error loading analysis film: " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Creates and stores the calibration curve from the 3 OD input values.
+        /// Does NOT modify the dose map — coefficients are applied on-the-fly during Recalculate.
+        /// </summary>
+        private void ApplyQuickCal_Click(object sender, RoutedEventArgs e)
+        {
+            if (!double.TryParse(QD0Box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double od0) ||
+                !double.TryParse(QD300Box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double od300) ||
+                !double.TryParse(QD600Box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double od600))
+            {
+                System.Windows.MessageBox.Show("Please ensure all three OD values are filled with valid numbers.", "Invalid Input", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+
+            if (od0 >= od300 || od300 >= od600)
+            {
+                var result = System.Windows.MessageBox.Show(
+                    $"Warning: OD values should increase with dose.\n\n" +
+                    $"  0 MU OD   = {od0:F6}\n" +
+                    $"  300 MU OD = {od300:F6}\n" +
+                    $"  600 MU OD = {od600:F6}\n\n" +
+                    $"These values appear out of order. Continue anyway?",
+                    "OD Order Check", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+                if (result != System.Windows.MessageBoxResult.Yes) return;
+            }
+
+            try
+            {
+                double[] xVals = { od0, od300, od600 };
+                double[] yVals = { 0.0, 300.0, 600.0 };
+                
+                _quickCalCoeffs = FittingMath.PolyFit(xVals, yVals, 2);
+
+                string info = $"Calibration curve created!\n\n" +
+                              $"Dose = {_quickCalCoeffs[0]:F4}·OD² + {_quickCalCoeffs[1]:F4}·OD + {_quickCalCoeffs[2]:F4}\n\n" +
+                              $"Verification:\n" +
+                              $"  f({od0:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od0):F1} (expect 0)\n" +
+                              $"  f({od300:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od300):F1} (expect 300)\n" +
+                              $"  f({od600:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od600):F1} (expect 600)\n\n" +
+                              $"Now load your analysis film and hit Recalculate.";
+                
+                if (CalStatusText != null) CalStatusText.Text = $"✓ {_quickCalCoeffs[0]:F2}·OD² + {_quickCalCoeffs[1]:F2}·OD + {_quickCalCoeffs[2]:F2}";
+                if (StatusText != null) StatusText.Text = "Calibration saved. Load film & Recalculate.";
+                
+                System.Windows.MessageBox.Show(info, "Calibration Created", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show("Failed to create calibration curve: " + ex.Message, "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Generates a Jet colormap heatmap of the dose-converted image and updates the display.
+        /// </summary>
+        private void UpdateJetHeatmap()
+        {
+            if (_quickCalCoeffs == null) return;
+
+            int h = _doseMap.GetLength(0);
+            int w = _doseMap.GetLength(1);
+            
+            double maxDose = 1;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    double d = PixelToDose(_doseMap[y, x]);
+                    if (d > maxDose) maxDose = d;
+                }
+
+            int stride = w * 4;
+            byte[] pixels = new byte[h * stride];
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    double dose = PixelToDose(_doseMap[y, x]);
+                    double norm = Math.Clamp(dose / maxDose, 0, 1);
+                    var (r, g, b) = ColorMaps.GetJetColor(norm);
+                    
+                    int idx = y * stride + x * 4;
+                    pixels[idx + 0] = b;
+                    pixels[idx + 1] = g;
+                    pixels[idx + 2] = r;
+                    pixels[idx + 3] = 255;
+                }
+            }
+
+            var bmp = BitmapSource.Create(w, h, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, pixels, stride);
+            bmp.Freeze();
+            FilmImage.Source = bmp;
+            FilmImage.Width = w;
+            FilmImage.Height = h;
+        }
+        #endregion
+
+
     }
 }
