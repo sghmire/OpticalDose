@@ -3,44 +3,71 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:scott="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
-        Title="Field size Analysis (FWHM) &amp; Alignment" Height="950" Width="1200"
+        Title="Field Size Analysis (FWHM)" Height="950" Width="1280"
+        MinHeight="760" MinWidth="1080"
         Icon="/Icon.png"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource ApplicationBackgroundBrush}"
         Foreground="{DynamicResource TextFillColorPrimaryBrush}"
         WindowBackdropType="None"
         MouseDown="Window_MouseDown">
-    
-    <Grid Margin="15">
+
+    <Grid Margin="16">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="320" />
+            <ColumnDefinition Width="340" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Sidebar: Parameters & Results -->
-        <Border Grid.Column="0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="0,0,1,0" Padding="0,0,15,0">
-            <TabControl TabStripPlacement="Top" Background="Transparent" BorderThickness="0">
+        <Border Grid.Column="0"
+                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="0,0,1,0"
+                Padding="0,0,16,0">
+            <TabControl x:Name="WorkflowTabs" TabStripPlacement="Top" Background="Transparent" BorderThickness="0">
                 <TabControl.Resources>
                     <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
-                        <Setter Property="Margin" Value="0,0,5,5"/>
+                        <Setter Property="Margin" Value="0,0,6,8"/>
                     </Style>
                 </TabControl.Resources>
 
-                <!-- Analysis Tab -->
-                <TabItem Header="Field Analysis">
+                <TabItem Header="1. Calibrate">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="0,10,0,0">
-                            
-                            <TextBlock Text="Alignment Parameters" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,15" />
-                            <ui:Card Padding="12" Margin="0,0,0,20">
+                            <TextBlock Text="Optional Quick Calibration" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,8" />
+                            <TextBlock Text="Load the calibration scan, position the target over each known-dose patch, extract the three OD values, then create the curve. The curve is preserved when you load the analysis film."
+                                       TextWrapping="Wrap"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Margin="0,0,0,12" />
+
+                            <ui:Card Padding="12" Margin="0,0,0,14">
                                 <StackPanel>
-                                    <TextBlock Text="Nominal Field Size" FontWeight="Bold" Margin="0,0,0,10" />
-                                    <Grid Margin="0,0,0,12">
+                                    <TextBlock Text="Calibration Source" FontWeight="Bold" Margin="0,0,0,8" />
+                                    <ui:Button Content="Load Calibration Scan"
+                                               Icon="{ui:SymbolIcon FolderOpen24}"
+                                               Appearance="Primary"
+                                               HorizontalAlignment="Stretch"
+                                               Height="38"
+                                               Click="LoadCalScan_Click"
+                                               Margin="0,0,0,8" />
+                                    <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" CornerRadius="4" Padding="8,6">
+                                        <TextBlock x:Name="CalStatusText"
+                                                   Text="No calibration curve loaded."
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </Border>
+                                </StackPanel>
+                            </ui:Card>
+
+                            <ui:Card Padding="12" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock Text="Target Size" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <Grid Margin="0,0,0,10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
                                             <TextBlock Text="Width (mm)" FontSize="10" Margin="0,0,0,4"/>
                                             <ui:TextBox x:Name="TargetSizeXBox" Text="50" HorizontalAlignment="Stretch" />
                                         </StackPanel>
@@ -49,17 +76,154 @@
                                             <ui:TextBox x:Name="TargetSizeYBox" Text="50" HorizontalAlignment="Stretch" />
                                         </StackPanel>
                                     </Grid>
-                                    
-                                    <Grid Margin="0,0,0,12">
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <ui:Button Grid.Column="0" Content="Apply Size" Icon="{ui:SymbolIcon Square24}" Appearance="Secondary" HorizontalAlignment="Stretch" Height="36" Margin="0,0,4,0" Click="ApplyReticleSize_Click" />
-                                        <ui:Button Grid.Column="1" Content="Center ROI" Icon="{ui:SymbolIcon Target24}" Appearance="Secondary" HorizontalAlignment="Stretch" Height="36" Margin="4,0,0,0" Click="CenterTarget_Click" />
+                                        <ui:Button Grid.Column="0"
+                                                   Content="Apply Size"
+                                                   Icon="{ui:SymbolIcon Square24}"
+                                                   Appearance="Secondary"
+                                                   HorizontalAlignment="Stretch"
+                                                   Height="36"
+                                                   Margin="0,0,4,0"
+                                                   Click="ApplyReticleSize_Click" />
+                                        <ui:Button Grid.Column="1"
+                                                   Content="Center Target"
+                                                   Icon="{ui:SymbolIcon Target24}"
+                                                   Appearance="Secondary"
+                                                   HorizontalAlignment="Stretch"
+                                                   Height="36"
+                                                   Margin="4,0,0,0"
+                                                   Click="CenterTarget_Click" />
                                     </Grid>
-                                    
-                                    <Grid HorizontalAlignment="Center" Margin="0,5,0,5">
+                                </StackPanel>
+                            </ui:Card>
+
+                            <ui:Card Padding="12" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock Text="Calibration Points" FontWeight="Bold" Margin="0,0,0,10" />
+                                    <TextBlock Text="Enter the delivered dose/MU for each patch, then extract its optical density from the target."
+                                               TextWrapping="Wrap"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               Margin="0,0,0,12" />
+
+                                    <Grid Margin="0,0,0,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="82" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:TextBox x:Name="QD0DoseBox" Grid.Column="0" Text="0" Margin="0,0,8,0" ToolTip="Delivered dose or MU for this patch" />
+                                        <TextBlock Grid.Column="1" Text="Low / background patch" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <ui:Button Grid.Column="2" Content="Extract" Icon="{ui:SymbolIcon ScanDash24}" Click="ExtractPoint1_Click" Height="30" Padding="8,2" FontSize="11" />
+                                    </Grid>
+                                    <ui:TextBox x:Name="QD0Box" PlaceholderText="Optical density" Margin="0,0,0,12" />
+
+                                    <Grid Margin="0,0,0,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="82" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:TextBox x:Name="QD300DoseBox" Grid.Column="0" Text="300" Margin="0,0,8,0" ToolTip="Delivered dose or MU for this patch" />
+                                        <TextBlock Grid.Column="1" Text="Mid-dose patch" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <ui:Button Grid.Column="2" Content="Extract" Icon="{ui:SymbolIcon ScanDash24}" Click="ExtractPoint2_Click" Height="30" Padding="8,2" FontSize="11" />
+                                    </Grid>
+                                    <ui:TextBox x:Name="QD300Box" PlaceholderText="Optical density" Margin="0,0,0,12" />
+
+                                    <Grid Margin="0,0,0,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="82" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:TextBox x:Name="QD600DoseBox" Grid.Column="0" Text="600" Margin="0,0,8,0" ToolTip="Delivered dose or MU for this patch" />
+                                        <TextBlock Grid.Column="1" Text="High-dose patch" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <ui:Button Grid.Column="2" Content="Extract" Icon="{ui:SymbolIcon ScanDash24}" Click="ExtractPoint3_Click" Height="30" Padding="8,2" FontSize="11" />
+                                    </Grid>
+                                    <ui:TextBox x:Name="QD600Box" PlaceholderText="Optical density" Margin="0,0,0,14" />
+
+                                    <ui:Button Content="Create Calibration"
+                                               Icon="{ui:SymbolIcon CheckmarkCircle24}"
+                                               Appearance="Primary"
+                                               HorizontalAlignment="Stretch"
+                                               Height="40"
+                                               Click="ApplyQuickCal_Click" />
+                                </StackPanel>
+                            </ui:Card>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="2. Analyze">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="0,8,0,0">
+                            <ui:Card Padding="10" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:Button Grid.Column="0"
+                                                   Content="Load Film"
+                                                   Icon="{ui:SymbolIcon Image24}"
+                                                   Appearance="Primary"
+                                                   HorizontalAlignment="Stretch"
+                                                   Height="34"
+                                                   Margin="0,0,4,0"
+                                                   Click="LoadAnalysisFilm_Click"
+                                                   ToolTip="Load the field film to analyze. Any quick calibration curve remains active." />
+                                        <ui:Button Grid.Column="1"
+                                                   Content="Sync Main"
+                                                   Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                                   Appearance="Secondary"
+                                                   HorizontalAlignment="Stretch"
+                                                   Height="34"
+                                                   Margin="4,0,0,0"
+                                                   Click="SyncMainFilmButton_Click"
+                                                   ToolTip="Pull the current aligned film from the main window." />
+                                    </Grid>
+                                    <TextBlock x:Name="ImageStatusText"
+                                               Text="Using the image supplied by the main window."
+                                               FontSize="10"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </ui:Card>
+
+                            <TextBlock Text="Align Target" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,6" />
+                            <ui:Card Padding="10" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                            <TextBlock Text="Target W (mm)" FontSize="10" Margin="0,0,0,3"/>
+                                            <ui:TextBox Text="{Binding Text, ElementName=TargetSizeXBox, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Stretch" Height="32" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                                            <TextBlock Text="Target H (mm)" FontSize="10" Margin="0,0,0,3"/>
+                                            <ui:TextBox Text="{Binding Text, ElementName=TargetSizeYBox, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Stretch" Height="32" />
+                                        </StackPanel>
+                                        <ui:Button Grid.Column="2"
+                                                   Icon="{ui:SymbolIcon Square24}"
+                                                   Appearance="Secondary"
+                                                   Width="38"
+                                                   Height="32"
+                                                   Padding="0"
+                                                   VerticalAlignment="Bottom"
+                                                   ToolTip="Apply target size"
+                                                   Click="ApplyReticleSize_Click" />
+                                    </Grid>
+
+                                    <Grid HorizontalAlignment="Center">
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
@@ -70,208 +234,243 @@
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        
-                                        <ui:Button Grid.Row="0" Grid.Column="0" Content="CCW" Icon="{ui:SymbolIcon ArrowCounterclockwise24}" Width="60" Height="32" Click="DPadRotateCCW_Click" ToolTip="Rotate -0.5 deg" Margin="2"/>
-                                        <ui:Button Grid.Row="0" Grid.Column="1" Icon="{ui:SymbolIcon ArrowUp24}" Width="60" Height="32" Click="DPadUp_Click" Margin="2"/>
-                                        <ui:Button Grid.Row="0" Grid.Column="2" Content="CW" Icon="{ui:SymbolIcon ArrowClockwise24}" Width="60" Height="32" Click="DPadRotateCW_Click" ToolTip="Rotate +0.5 deg" Margin="2"/>
-                                        
-                                        <ui:Button Grid.Row="1" Grid.Column="0" Icon="{ui:SymbolIcon ArrowLeft24}" Width="60" Height="32" Click="DPadLeft_Click" Margin="2"/>
-                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="Nudge" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                                        <ui:Button Grid.Row="1" Grid.Column="2" Icon="{ui:SymbolIcon ArrowRight24}" Width="60" Height="32" Click="DPadRight_Click" Margin="2"/>
-                                        
-                                        <ui:Button Grid.Row="2" Grid.Column="1" Icon="{ui:SymbolIcon ArrowDown24}" Width="60" Height="32" Click="DPadDown_Click" Margin="2"/>
-                                    </Grid>
 
-                                    <TextBlock Text="You may also drag the box on the right. Hit Recalculate Analysis when perfectly aligned!" FontStyle="Italic" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                        <ui:Button Grid.Row="0" Grid.Column="0" Icon="{ui:SymbolIcon ArrowCounterclockwise24}" Width="52" Height="28" Click="DPadRotateCCW_Click" ToolTip="Rotate -0.1 deg" Margin="2"/>
+                                        <ui:Button Grid.Row="0" Grid.Column="1" Icon="{ui:SymbolIcon ArrowUp24}" Width="52" Height="28" Click="DPadUp_Click" ToolTip="Nudge up" Margin="2"/>
+                                        <ui:Button Grid.Row="0" Grid.Column="2" Icon="{ui:SymbolIcon ArrowClockwise24}" Width="52" Height="28" Click="DPadRotateCW_Click" ToolTip="Rotate +0.1 deg" Margin="2"/>
+
+                                        <ui:Button Grid.Row="1" Grid.Column="0" Icon="{ui:SymbolIcon ArrowLeft24}" Width="52" Height="28" Click="DPadLeft_Click" ToolTip="Nudge left" Margin="2"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="Nudge" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <ui:Button Grid.Row="1" Grid.Column="2" Icon="{ui:SymbolIcon ArrowRight24}" Width="52" Height="28" Click="DPadRight_Click" ToolTip="Nudge right" Margin="2"/>
+
+                                        <ui:Button Grid.Row="2" Grid.Column="0"
+                                                   Icon="{ui:SymbolIcon Target24}"
+                                                   Width="52"
+                                                   Height="28"
+                                                   Padding="0"
+                                                   Click="CenterTarget_Click"
+                                                   ToolTip="Center target"
+                                                   Margin="2"/>
+                                        <ui:Button Grid.Row="2" Grid.Column="1" Icon="{ui:SymbolIcon ArrowDown24}" Width="52" Height="28" Click="DPadDown_Click" ToolTip="Nudge down" Margin="2"/>
+                                    </Grid>
                                 </StackPanel>
                             </ui:Card>
 
-                            <TextBlock Text="Field size Parameters" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,15" />
-                            <ui:Card Padding="12" Margin="0,0,0,20">
+                            <TextBlock Text="Analysis Settings" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,6" />
+                            <ui:Card Padding="10" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="Analysis Area" FontWeight="Bold" Margin="0,0,0,10" />
-                                    
-                                    <Grid Margin="0,0,0,12">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                            <TextBlock Text="Plateau X" FontSize="10" Margin="0,0,0,3"/>
+                                            <ui:TextBox x:Name="PlateauXBox" Text="20" HorizontalAlignment="Stretch" Height="40" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                                            <TextBlock Text="Plateau Y" FontSize="10" Margin="0,0,0,3"/>
+                                            <ui:TextBox x:Name="PlateauYBox" Text="20" HorizontalAlignment="Stretch" Height="40" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Peak Method" FontSize="10" Margin="0,0,0,3" />
+                                            <ComboBox x:Name="MethodBox" HorizontalAlignment="Stretch" Height="40" Padding="10,5">
+                                                <ComboBoxItem Content="Known Dose" IsSelected="True" />
+                                                <ComboBoxItem Content="Maximum" />
+                                                <ComboBoxItem Content="Mean" />
+                                                <ComboBoxItem Content="Median" />
+                                            </ComboBox>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                            <TextBlock Text="Plateau X (mm)" FontSize="10" Margin="0,0,0,4"/>
-                                            <ui:TextBox x:Name="PlateauXBox" Text="20" HorizontalAlignment="Stretch" />
+                                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                            <TextBlock Text="Known Full Dose" FontSize="10" Margin="0,0,0,3"/>
+                                            <ui:TextBox x:Name="KnownFullDoseBox" Text="600" HorizontalAlignment="Stretch" Height="34" TextChanged="KnownFullDoseBox_TextChanged" ToolTip="Expected central-axis or plateau dose for this field film. Known Dose uses half of this value as the FWHM threshold." />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1">
-                                            <TextBlock Text="Plateau Y (mm)" FontSize="10" Margin="0,0,0,4"/>
-                                            <ui:TextBox x:Name="PlateauYBox" Text="20" HorizontalAlignment="Stretch" />
+                                            <TextBlock Text="Half Dose Threshold" FontSize="10" Margin="0,0,0,3"/>
+                                            <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" CornerRadius="4" Height="34" Padding="8,0">
+                                                <TextBlock x:Name="KnownHalfDoseText"
+                                                           Text="300"
+                                                           VerticalAlignment="Center"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </Border>
                                         </StackPanel>
                                     </Grid>
 
-                                    <TextBlock Text="Analysis Method" FontSize="11" Margin="0,0,0,5" />
-                                    <ComboBox x:Name="MethodBox" HorizontalAlignment="Stretch" Height="38" Margin="0,0,0,20">
-                                        <ComboBoxItem Content="Maximum" IsSelected="True" />
-                                        <ComboBoxItem Content="Mean" />
-                                        <ComboBoxItem Content="Median" />
-                                    </ComboBox>
-
-                                    <ui:Button Content="Recalculate Analysis" Icon="{ui:SymbolIcon Calculator24}" Appearance="Primary" HorizontalAlignment="Stretch" Height="42" Click="CalcButton_Click" />
+                                    <ui:Button Content="Run Field Size Analysis"
+                                               Icon="{ui:SymbolIcon Calculator24}"
+                                               Appearance="Primary"
+                                               HorizontalAlignment="Stretch"
+                                               Height="36"
+                                               Click="CalcButton_Click" />
                                 </StackPanel>
                             </ui:Card>
 
-                            <TextBlock Text="Results" Style="{StaticResource DosimetrySectionHeader}" Margin="0,10,0,10" />
-                            <ui:Card Padding="15">
+                            <TextBlock Text="Results" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,6" />
+                            <ui:Card Padding="10" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock x:Name="ResultText" Text="FWHM X = --- mm&#x0a;FWHM Y = --- mm&#x0a;Coverage = --- mm²" FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,15" Foreground="{DynamicResource AccentFillColorDefaultBrush}"/>
-                                    
-                                    <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" CornerRadius="4" Padding="8,6">
-                                        <TextBlock x:Name="StatusText" Text="Ready for Analysis" FontSize="11" FontStyle="Italic" HorizontalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock x:Name="ResultText"
+                                               Text="FWHM X = --- mm&#x0a;FWHM Y = --- mm&#x0a;Coverage = --- mm^2"
+                                               FontWeight="SemiBold"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               Margin="0,0,0,8"
+                                               Foreground="{DynamicResource AccentFillColorDefaultBrush}"/>
+                                    <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" CornerRadius="4" Padding="7,5">
+                                        <TextBlock x:Name="StatusText"
+                                                   Text="Ready for analysis."
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis" />
                                     </Border>
                                 </StackPanel>
                             </ui:Card>
 
-                            <Grid Margin="0,20,0,0">
+                            <Grid Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <ui:Button Grid.Column="0" Content="Print Report" Icon="{ui:SymbolIcon Print24}" 
-                                           Appearance="Info" Opacity="0.75" HorizontalAlignment="Stretch" 
-                                           Margin="0,0,5,0" Click="PrintReport_Click" />
-                                <ui:Button Grid.Column="1" Content="Close Analysis" Icon="{ui:SymbolIcon Dismiss24}" 
-                                           Appearance="Danger" Opacity="0.75" HorizontalAlignment="Stretch" 
-                                           Margin="5,0,0,0" Click="Close_Click" />
+                                <ui:Button Grid.Column="0"
+                                           Content="Print Report"
+                                           Icon="{ui:SymbolIcon Print24}"
+                                           Appearance="Info"
+                                           HorizontalAlignment="Stretch"
+                                           Height="34"
+                                           Margin="0,0,5,0"
+                                           Click="PrintReport_Click" />
+                                <ui:Button Grid.Column="1"
+                                           Content="Close"
+                                           Icon="{ui:SymbolIcon Dismiss24}"
+                                           Appearance="Danger"
+                                           HorizontalAlignment="Stretch"
+                                           Height="34"
+                                           Margin="5,0,0,0"
+                                           Click="Close_Click" />
                             </Grid>
-
-                            <TextBlock Text="Analysis based on 50% FWHM from normalized plateau." FontStyle="Italic" FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,20,0,0"/>
-
-                            <!-- Reload Field Size Image option if they drifted during Cal -->
-                            <ui:Button Content="Reload Original Dose Map" Icon="{ui:SymbolIcon ArrowCounterclockwise24}" Appearance="Transparent" HorizontalAlignment="Stretch" Margin="0,10,0,0" Click="ReloadOriginalImage_Click" ToolTip="Restores original image after changing to Calibration scans."/>
-                        </StackPanel>
-                    </ScrollViewer>
-                </TabItem>
-                
-                <!-- Quick Calibration Tab -->
-                <TabItem Header="Quick Calibrate">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="0,10,0,0">
-                            
-                            <TextBlock Text="3-Point Field Calibration" Style="{StaticResource DosimetrySectionHeader}" Margin="0,0,0,10" />
-                            <TextBlock Text="Use the Target Tool to extract Optical Density for exactly 0, 300, and 600 MU regions." TextWrapping="Wrap" FontSize="11" FontStyle="Italic" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,15" />
-                            
-                            <ui:Card Padding="12" Margin="0,0,0,15">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Background (0 MU)" FontWeight="Bold" VerticalAlignment="Bottom"/>
-                                        <ui:Button Grid.Column="1" Content="Extract from Target" Icon="{ui:SymbolIcon ScanDash24}" Click="Extract0MU_Click" Height="28" Padding="6,2" FontSize="11" />
-                                    </Grid>
-                                    <ui:TextBox x:Name="QD0Box" PlaceholderText="Optical Density (0 MU)" Margin="0,0,0,15" />
-
-                                    <Grid Margin="0,0,0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Penumbra (300 MU)" FontWeight="Bold" VerticalAlignment="Bottom"/>
-                                        <ui:Button Grid.Column="1" Content="Extract from Target" Icon="{ui:SymbolIcon ScanDash24}" Click="Extract300MU_Click" Height="28" Padding="6,2" FontSize="11" />
-                                    </Grid>
-                                    <ui:TextBox x:Name="QD300Box" PlaceholderText="Optical Density (300 MU)" Margin="0,0,0,15" />
-
-                                    <Grid Margin="0,0,0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="CAX Peak (600 MU)" FontWeight="Bold" VerticalAlignment="Bottom"/>
-                                        <ui:Button Grid.Column="1" Content="Extract from Target" Icon="{ui:SymbolIcon ScanDash24}" Click="Extract600MU_Click" Height="28" Padding="6,2" FontSize="11" />
-                                    </Grid>
-                                    <ui:TextBox x:Name="QD600Box" PlaceholderText="Optical Density (600 MU)" Margin="0,0,0,15" />
-                                </StackPanel>
-                            </ui:Card>
-                            
-                            <ui:Button Content="Create Calibration" Icon="{ui:SymbolIcon CheckmarkCircle24}" Appearance="Primary" HorizontalAlignment="Stretch" Height="42" Click="ApplyQuickCal_Click" Margin="0,0,0,10"/>
-
-                            <Border Background="{DynamicResource ControlFillColorSecondaryBrush}" CornerRadius="4" Padding="8,6" Margin="0,0,0,15">
-                                <TextBlock x:Name="CalStatusText" Text="No calibration curve loaded." FontSize="11" FontStyle="Italic" HorizontalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                            </Border>
-
-                            <TextBlock Text="Load scans for extraction:" FontSize="11" FontWeight="Bold" Margin="0,0,0,5" />
-                            <ui:Button Content="Load Calibration Scan (TIF)" Icon="{ui:SymbolIcon FolderOpen24}" Appearance="Secondary" HorizontalAlignment="Stretch" Height="36" Click="LoadCalScan_Click" Margin="0,0,0,8" />
-                            <ui:Button Content="Load Analysis Film (TIF)" Icon="{ui:SymbolIcon Image24}" Appearance="Secondary" HorizontalAlignment="Stretch" Height="36" Click="LoadAnalysisFilm_Click" ToolTip="Load the field film you want to analyze. The saved calibration will be applied when you Recalculate." />
-                            
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>
             </TabControl>
         </Border>
 
-        <!-- Main Content Area: Plots -->
-        <Grid Grid.Column="1" Margin="15,0,0,0">
+        <Grid Grid.Column="1" Margin="16,0,0,0">
             <Grid.RowDefinitions>
-                <RowDefinition Height="1.1*" />
-                <RowDefinition Height="0.9*" />
+                <RowDefinition Height="1.25*" MinHeight="430" />
+                <RowDefinition Height="0.75*" MinHeight="230" />
             </Grid.RowDefinitions>
 
-            <!-- 2D Image View with Draggable overlay -->
-            <Border Grid.Row="0" Margin="0,0,0,8" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="5" Background="{DynamicResource ControlFillColorDefaultBrush}">
+            <Border Grid.Row="0"
+                    Margin="0,0,0,8"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="5"
+                    Background="{DynamicResource ControlFillColorDefaultBrush}">
                 <Grid x:Name="ImageBoxGrid" ClipToBounds="True">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    
                     <Viewbox Stretch="Uniform">
-                         <Grid x:Name="AlignGrid" Margin="300">
+                        <Grid x:Name="AlignGrid">
                             <Image x:Name="FilmImage" Stretch="Fill" HorizontalAlignment="Left" VerticalAlignment="Top"/>
-                            <Canvas x:Name="OverlayCanvas" Background="Transparent" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                    Width="{Binding Width, ElementName=FilmImage}" 
+                            <Canvas x:Name="OverlayCanvas"
+                                    Background="Transparent"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    Width="{Binding Width, ElementName=FilmImage}"
                                     Height="{Binding Height, ElementName=FilmImage}"
-                                    MouseDown="OverlayCanvas_MouseDown" 
-                                    MouseMove="OverlayCanvas_MouseMove" 
-                                    MouseUp="OverlayCanvas_MouseUp" 
+                                    MouseDown="OverlayCanvas_MouseDown"
+                                    MouseMove="OverlayCanvas_MouseMove"
+                                    MouseUp="OverlayCanvas_MouseUp"
                                     Focusable="True"
                                     KeyDown="OverlayCanvas_KeyDown">
-                                <!-- Draggable target box -->
-                                <Rectangle x:Name="TargetRect" RenderTransformOrigin="0.5,0.5" Stroke="#00FFFF" StrokeThickness="2.5" StrokeDashArray="4 2" Fill="#4400FFFF" Visibility="Hidden" IsHitTestVisible="False">
+                                <Rectangle x:Name="TargetRect"
+                                           RenderTransformOrigin="0.5,0.5"
+                                           Stroke="#00E5FF"
+                                           StrokeThickness="3"
+                                           StrokeDashArray="4 2"
+                                           Fill="#3300E5FF"
+                                           Visibility="Hidden"
+                                           IsHitTestVisible="False">
                                     <Rectangle.RenderTransform>
                                         <RotateTransform x:Name="TargetRotation" Angle="0"/>
                                     </Rectangle.RenderTransform>
                                 </Rectangle>
-                                
-                                <!-- Center crosshair point -->
-                                <Ellipse x:Name="TargetCenter" Width="10" Height="10" Stroke="Black" StrokeThickness="1.5" Fill="#00FFFF" Visibility="Hidden" IsHitTestVisible="False" Margin="-5,-5,0,0"/>
+
+                                <Ellipse x:Name="TargetCenter"
+                                         Width="24"
+                                         Height="24"
+                                         Stroke="Black"
+                                         StrokeThickness="3"
+                                         Fill="#00E5FF"
+                                         Visibility="Hidden"
+                                         IsHitTestVisible="False"
+                                         Margin="-12,-12,0,0"/>
                             </Canvas>
-                         </Grid>
+                        </Grid>
                     </Viewbox>
-                    
-                    <TextBlock Text="ALIGNMENT / DOSE MAP" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,8,12,0" 
-                               FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+
+                    <Border VerticalAlignment="Top"
+                            HorizontalAlignment="Right"
+                            Margin="0,8,12,0"
+                            Background="#99000000"
+                            CornerRadius="4"
+                            Padding="8,4">
+                        <TextBlock Text="FIELD FILM / TARGET ALIGNMENT"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="White"/>
+                    </Border>
                 </Grid>
             </Border>
 
-            <!-- Plots Grid -->
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- X-Profile Plot -->
-                <Border Grid.Column="0" Margin="0,0,4,0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="5" Background="{DynamicResource ControlFillColorDefaultBrush}">
+                <Border Grid.Column="0"
+                        Margin="0,0,4,0"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="5"
+                        Background="{DynamicResource ControlFillColorDefaultBrush}">
                     <Grid>
                         <scott:WpfPlot x:Name="XPlot" />
-                        <TextBlock Text="X-AXIS DOSIMETRY PROFILE" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,8,12,0" 
-                                   FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                        <TextBlock Text="X-AXIS DOSIMETRY PROFILE"
+                                   VerticalAlignment="Top"
+                                   HorizontalAlignment="Right"
+                                   Margin="0,8,12,0"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
                     </Grid>
                 </Border>
 
-                <!-- Y-Profile Plot -->
-                <Border Grid.Column="1" Margin="4,0,0,0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="5" Background="{DynamicResource ControlFillColorDefaultBrush}">
+                <Border Grid.Column="1"
+                        Margin="4,0,0,0"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="5"
+                        Background="{DynamicResource ControlFillColorDefaultBrush}">
                     <Grid>
                         <scott:WpfPlot x:Name="YPlot" />
-                        <TextBlock Text="Y-AXIS DOSIMETRY PROFILE" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,8,12,0" 
-                                   FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                        <TextBlock Text="Y-AXIS DOSIMETRY PROFILE"
+                                   VerticalAlignment="Top"
+                                   HorizontalAlignment="Right"
+                                   Margin="0,8,12,0"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
                     </Grid>
                 </Border>
             </Grid>

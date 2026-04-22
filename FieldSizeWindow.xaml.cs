@@ -1,6 +1,7 @@
 using ScottPlot;
 using ScottPlot.WPF;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
@@ -25,6 +26,8 @@ namespace OpticalDose
 
         // Cached results for reporting
         private double _lastFwhmX, _lastFwhmY, _lastStdX, _lastStdY, _lastCoverage;
+        private double _lastUncertaintyX, _lastUncertaintyY, _lastTolerance, _lastDeltaX, _lastDeltaY;
+        private bool _lastPassX, _lastPassY;
         private string _lastMethod = "Maximum";
         private double _lastPlateauX, _lastPlateauY;
 
@@ -35,10 +38,20 @@ namespace OpticalDose
         private Point _dragStartPoint;
         private double _rectStartLeft;
         private double _rectStartTop;
+        private string _analysisImageName = "Main window image";
+        private bool _hasAnalysisFilm;
+        private readonly Func<(double[,]? Map, double Dpi, BitmapSource? Image, string Name)>? _syncFilmProvider;
 
-        public FieldSizeWindow(double[,]? doseMap, double dpi, AppSettings settings, BitmapSource? imageSource = null)
+        public FieldSizeWindow(
+            double[,]? doseMap,
+            double dpi,
+            AppSettings settings,
+            BitmapSource? imageSource = null,
+            Func<(double[,]? Map, double Dpi, BitmapSource? Image, string Name)>? syncFilmProvider = null)
         {
             InitializeComponent();
+            _hasAnalysisFilm = doseMap != null;
+            _syncFilmProvider = syncFilmProvider;
             _doseMap = doseMap ?? new double[100, 100]; // Placeholder until user loads a film
             _dpi = dpi <= 0 ? 72.0 : dpi;
             _settings = settings;
@@ -50,6 +63,7 @@ namespace OpticalDose
                 FilmImage.Source = imageSource;
                 FilmImage.Width = _doseMap.GetLength(1);
                 FilmImage.Height = _doseMap.GetLength(0);
+                _originalImageSource = imageSource;
             }
 
             // Load last settings
@@ -63,13 +77,124 @@ namespace OpticalDose
                     break;
                 }
             }
-            StatusText.Text = "Ready. Set Target Box above to align.";
+            StatusText.Text = "Ready. Load an analysis film or use the image supplied by the main window.";
+            if (ImageStatusText != null)
+                RefreshAnalysisImageStatus();
+            UpdateKnownDosePreview();
             
             // Auto click apply reticle to start immediately if default 50x50 is ok
             ApplyReticleSize_Click(null, null);
+            if (WorkflowTabs != null) WorkflowTabs.SelectedIndex = 1;
         }
 
-        private void ApplyReticleSize_Click(object sender, RoutedEventArgs e)
+        private void UpdateOverlayVisualScale()
+        {
+            int width = Math.Max(1, GetDisplayedImageWidth());
+            double stroke = Math.Clamp(width / 360.0, 2.5, 18.0);
+            double centerSize = Math.Clamp(width / 80.0, 18.0, 120.0);
+
+            TargetRect.StrokeThickness = stroke;
+            TargetCenter.Width = centerSize;
+            TargetCenter.Height = centerSize;
+            TargetCenter.StrokeThickness = Math.Max(stroke * 0.45, 2.0);
+            TargetCenter.Margin = new Thickness(-centerSize / 2.0, -centerSize / 2.0, 0, 0);
+        }
+
+        private void RefreshAnalysisImageStatus()
+        {
+            if (ImageStatusText == null) return;
+
+            if (!_hasAnalysisFilm)
+            {
+                ImageStatusText.Text = "No analysis film synced yet. Load a film or sync the current main-window film.";
+                return;
+            }
+
+            string cal = _quickCalCoeffs == null ? "No quick calibration curve active." : "Quick calibration curve active.";
+            ImageStatusText.Text = $"Using {_analysisImageName} ({_doseMap.GetLength(1)}x{_doseMap.GetLength(0)}, {_dpi:F1} DPI). {cal}";
+        }
+
+        private bool TrySyncAnalysisFilmFromMain(bool showErrors)
+        {
+            if (_syncFilmProvider == null)
+            {
+                if (showErrors)
+                {
+                    System.Windows.MessageBox.Show(
+                        "This Field Size window was opened without a main-window sync source. Load an analysis film instead.",
+                        "Sync Main Film",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Information);
+                }
+                return false;
+            }
+
+            var film = _syncFilmProvider();
+            if (film.Map == null)
+            {
+                if (showErrors)
+                {
+                    System.Windows.MessageBox.Show(
+                        "No film or dose map is currently available in the main window.",
+                        "Sync Main Film",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Warning);
+                }
+                return false;
+            }
+
+            SetAnalysisFilm(film.Map, film.Dpi, film.Image, film.Name);
+            return true;
+        }
+
+        private void SetAnalysisFilm(double[,] map, double dpi, BitmapSource? imageSource, string name)
+        {
+            _doseMap = map;
+            _dpi = dpi <= 0 ? 72.0 : dpi;
+            _mmPerPixelX = 25.4 / _dpi;
+            _mmPerPixelY = 25.4 / _dpi;
+            _activeExtractMap = null;
+            _originalImageSource = imageSource;
+            _hasAnalysisFilm = true;
+
+            FilmImage.Source = imageSource;
+            FilmImage.Width = _doseMap.GetLength(1);
+            FilmImage.Height = _doseMap.GetLength(0);
+
+            _analysisImageName = string.IsNullOrWhiteSpace(name) ? "Main window image" : name;
+            ResetTargetForCurrentImage();
+            RefreshAnalysisImageStatus();
+
+            string calStatus = _quickCalCoeffs != null ? " Cal curve ready." : "";
+            if (StatusText != null)
+                StatusText.Text = $"Synced {_analysisImageName} ({_doseMap.GetLength(1)}x{_doseMap.GetLength(0)}).{calStatus} Align the target and run field size analysis.";
+        }
+
+        private void ResetTargetForCurrentImage()
+        {
+            TargetRect.Visibility = Visibility.Hidden;
+            TargetCenter.Visibility = Visibility.Hidden;
+            TargetRotation.Angle = 0;
+            _customRotationAngle = 0.0;
+            _customCenterPixel = null;
+            ApplyReticleSize_Click(null, null);
+        }
+
+        private int GetDisplayedImageWidth()
+        {
+            return FilmImage != null && FilmImage.Width > 0
+                ? (int)Math.Round(FilmImage.Width)
+                : _doseMap.GetLength(1);
+        }
+
+        private int GetDisplayedImageHeight()
+        {
+            return FilmImage != null && FilmImage.Height > 0
+                ? (int)Math.Round(FilmImage.Height)
+                : _doseMap.GetLength(0);
+        }
+
+        private void ApplyReticleSize_Click(object? sender, RoutedEventArgs? e)
         {
             if (!double.TryParse(TargetSizeXBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double tX)) tX = 50;
             if (!double.TryParse(TargetSizeYBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double tY)) tY = 50;
@@ -92,9 +217,10 @@ namespace OpticalDose
 
             TargetRect.Width = pxWidth;
             TargetRect.Height = pxHeight;
+            UpdateOverlayVisualScale();
 
-            int w = _doseMap.GetLength(1);
-            int h = _doseMap.GetLength(0);
+            int w = GetDisplayedImageWidth();
+            int h = GetDisplayedImageHeight();
 
             if (!wasVisible)
             {
@@ -110,6 +236,7 @@ namespace OpticalDose
             }
 
             UpdateCenterFromRect();
+            if (StatusText != null) StatusText.Text = $"Target set to {tX:F1} x {tY:F1} mm. Drag it over the field, then run analysis.";
             OverlayCanvas.Focus();
         }
 
@@ -117,8 +244,8 @@ namespace OpticalDose
         {
             if (TargetRect.Visibility != Visibility.Visible) return;
 
-            int w = _doseMap.GetLength(1);
-            int h = _doseMap.GetLength(0);
+            int w = GetDisplayedImageWidth();
+            int h = GetDisplayedImageHeight();
 
             Canvas.SetLeft(TargetRect, (w - TargetRect.Width) / 2.0);
             Canvas.SetTop(TargetRect, (h - TargetRect.Height) / 2.0);
@@ -127,7 +254,7 @@ namespace OpticalDose
             _customRotationAngle = 0.0;
 
             UpdateCenterFromRect();
-            if (StatusText != null) StatusText.Text = "ROI Centered to Image boundaries.";
+            if (StatusText != null) StatusText.Text = "Target centered to image boundaries.";
             OverlayCanvas.Focus();
         }
 
@@ -248,7 +375,15 @@ namespace OpticalDose
 
         private void CalcButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_doseMap == null) return;
+            if (!_hasAnalysisFilm && !TrySyncAnalysisFilmFromMain(false))
+            {
+                System.Windows.MessageBox.Show(
+                    "Load an analysis film or sync the current main-window film before running field size analysis.",
+                    "No Analysis Film",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Warning);
+                return;
+            }
 
             if (!double.TryParse(PlateauXBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double plateauX)) plateauX = 0;
             if (!double.TryParse(PlateauYBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double plateauY)) plateauY = 0;
@@ -258,12 +393,14 @@ namespace OpticalDose
             // Save settings for next time
             _settings.LastPlateauX = plateauX;
             _settings.LastPlateauY = plateauY;
-            _settings.LastJawMethod = ((ComboBoxItem)MethodBox.SelectedItem).Content.ToString();
+            string selectedMethod = ((MethodBox.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString() ?? "Maximum");
+            _settings.LastJawMethod = selectedMethod;
 
-            string method = ((MethodBox.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString() ?? "Maximum").ToLowerInvariant();
+            string method = selectedMethod.ToLowerInvariant();
 
             try
             {
+                UpdateKnownDosePreview();
                 ComputeAndPlot(plateauX, plateauY, method);
                 if (StatusText != null) StatusText.Text = "Calculated Center/Rot: " + (_customCenterPixel.HasValue ? $"({_customCenterPixel.Value.X:F0}, {_customCenterPixel.Value.Y:F0}) @ {_customRotationAngle:F1}°" : "Auto");
             }
@@ -271,6 +408,33 @@ namespace OpticalDose
             {
                 if (StatusText != null) StatusText.Text = $"Error: {ex.Message}";
             }
+        }
+
+        private double? GetKnownFullDose()
+        {
+            if (KnownFullDoseBox != null &&
+                double.TryParse(KnownFullDoseBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double fullDose) &&
+                fullDose > 0)
+            {
+                return fullDose;
+            }
+
+            return _quickCalFullDose;
+        }
+
+        private void UpdateKnownDosePreview()
+        {
+            if (KnownHalfDoseText == null) return;
+
+            double? fullDose = GetKnownFullDose();
+            KnownHalfDoseText.Text = fullDose.HasValue
+                ? (fullDose.Value / 2.0).ToString("F3", CultureInfo.InvariantCulture)
+                : "---";
+        }
+
+        private void KnownFullDoseBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            UpdateKnownDosePreview();
         }
 
         private static double InterpolateBilinear(double[,] map, double x, double y)
@@ -304,6 +468,12 @@ namespace OpticalDose
         {
             int h = _doseMap.GetLength(0);
             int w = _doseMap.GetLength(1);
+            double? knownFullDose = method == "known dose" ? GetKnownFullDose() : null;
+            double? knownHalfDose = knownFullDose / 2.0;
+            string methodLabel = FormatMethodLabel(method, knownFullDose);
+
+            if (method == "known dose" && (!knownHalfDose.HasValue || knownHalfDose.Value <= 0))
+                throw new InvalidOperationException("Enter a positive known full dose before using Known Dose analysis.");
 
             double pixelCenterX = _customCenterPixel.HasValue ? _customCenterPixel.Value.X : (w - 1) / 2.0;
             double pixelCenterY = _customCenterPixel.HasValue ? _customCenterPixel.Value.Y : (h - 1) / 2.0;
@@ -328,8 +498,10 @@ namespace OpticalDose
             int numProfilesX = plateauY <= 0 ? 1 : Math.Max(1, (int)(plateauY / stepY) + 1);
 
             double[][] xProfiles = new double[numProfilesX][];
-            var leftX = new double[numProfilesX];
-            var rightX = new double[numProfilesX];
+            var leftX = new System.Collections.Generic.List<double>();
+            var rightX = new System.Collections.Generic.List<double>();
+            var fwhmXList = new System.Collections.Generic.List<double>();
+            var xEdgeSamples = new List<EdgeSample>();
             double[] xCoords = Enumerable.Range(0, numPointsX).Select(j => (j - (numPointsX - 1) / 2.0) * stepX).ToArray();
 
             for(int i = 0; i < numProfilesX; i++)
@@ -350,20 +522,14 @@ namespace OpticalDose
                 }
                 xProfiles[i] = profile;
 
-                double[] smoothedProfile = GaussianSmooth1D(profile, 1.5);
-                double[] plateauSlice = GetPlateauSlice(smoothedProfile, xCoords, plateauX, 0.0);
-                double peak = SelectPeak(plateauSlice, method);
-                double threshold = peak / 2.0;
-
-                int maxIdx = Array.IndexOf(smoothedProfile, smoothedProfile.Max());
-                
-                int idxL = maxIdx;
-                while (idxL > 0 && smoothedProfile[idxL - 1] >= threshold) idxL--;
-                leftX[i] = (idxL <= 0) ? xCoords[0] : FitLogisticEdge(smoothedProfile, xCoords, idxL - 1, idxL, threshold, peak);
-
-                int idxR = maxIdx;
-                while (idxR < smoothedProfile.Length - 1 && smoothedProfile[idxR + 1] >= threshold) idxR++;
-                rightX[i] = (idxR >= smoothedProfile.Length - 1) ? xCoords[^1] : FitLogisticEdge(smoothedProfile, xCoords, idxR, idxR + 1, threshold, peak);
+                var edges = AnalyzeFwhmProfile(profile, xCoords, plateauX, method, knownHalfDose);
+                if (edges.IsValid)
+                {
+                    leftX.Add(edges.Left);
+                    rightX.Add(edges.Right);
+                    fwhmXList.Add(Math.Abs(edges.Right - edges.Left));
+                    xEdgeSamples.Add(new EdgeSample(yOffsetPhys, edges.Left, edges.Right));
+                }
             }
 
             // Y profiles span the ROI height + margin
@@ -371,8 +537,10 @@ namespace OpticalDose
             int numProfilesY = plateauX <= 0 ? 1 : Math.Max(1, (int)(plateauX / stepX) + 1);
 
             double[][] yProfiles = new double[numProfilesY][];
-            var leftY = new double[numProfilesY];
-            var rightY = new double[numProfilesY];
+            var leftY = new System.Collections.Generic.List<double>();
+            var rightY = new System.Collections.Generic.List<double>();
+            var fwhmYList = new System.Collections.Generic.List<double>();
+            var yEdgeSamples = new List<EdgeSample>();
             double[] yCoords = Enumerable.Range(0, numPointsY).Select(j => (j - (numPointsY - 1) / 2.0) * stepY).ToArray();
 
             for(int i = 0; i < numProfilesY; i++)
@@ -393,51 +561,82 @@ namespace OpticalDose
                 }
                 yProfiles[i] = profile;
 
-                double[] smoothedProfile = GaussianSmooth1D(profile, 1.5);
-                double[] plateauSlice = GetPlateauSlice(smoothedProfile, yCoords, plateauY, 0.0);
-                double peak = SelectPeak(plateauSlice, method);
-                double threshold = peak / 2.0;
-
-                int maxIdx = Array.IndexOf(smoothedProfile, smoothedProfile.Max());
-                
-                int idxL = maxIdx;
-                while (idxL > 0 && smoothedProfile[idxL - 1] >= threshold) idxL--;
-                leftY[i] = (idxL <= 0) ? yCoords[0] : FitLogisticEdge(smoothedProfile, yCoords, idxL - 1, idxL, threshold, peak);
-
-                int idxR = maxIdx;
-                while (idxR < smoothedProfile.Length - 1 && smoothedProfile[idxR + 1] >= threshold) idxR++;
-                rightY[i] = (idxR >= smoothedProfile.Length - 1) ? yCoords[^1] : FitLogisticEdge(smoothedProfile, yCoords, idxR, idxR + 1, threshold, peak);
+                var edges = AnalyzeFwhmProfile(profile, yCoords, plateauY, method, knownHalfDose);
+                if (edges.IsValid)
+                {
+                    leftY.Add(edges.Left);
+                    rightY.Add(edges.Right);
+                    fwhmYList.Add(Math.Abs(edges.Right - edges.Left));
+                    yEdgeSamples.Add(new EdgeSample(xOffsetPhys, edges.Left, edges.Right));
+                }
             }
 
             // Stats
-            var fwhmX = leftX.Zip(rightX, (l, r) => Math.Abs(r - l)).ToArray();
-            var fwhmY = leftY.Zip(rightY, (l, r) => Math.Abs(r - l)).ToArray();
+            var fwhmX = fwhmXList.ToArray();
+            var fwhmY = fwhmYList.ToArray();
+            double plotLeftX = leftX.Count > 0 ? leftX.Average() : 0;
+            double plotRightX = rightX.Count > 0 ? rightX.Average() : 0;
+            double plotLeftY = leftY.Count > 0 ? leftY.Average() : 0;
+            double plotRightY = rightY.Count > 0 ? rightY.Average() : 0;
 
-            double meanX = fwhmX.Length > 0 ? Math.Round(fwhmX.Average(), 3) : 0;
+            if (method == "known dose")
+            {
+                var xFit = FitMultiProfileEdges(xEdgeSamples);
+                if (xFit.IsValid)
+                {
+                    fwhmX = xFit.Widths;
+                    plotLeftX = xFit.LeftAtCenter;
+                    plotRightX = xFit.RightAtCenter;
+                }
+
+                var yFit = FitMultiProfileEdges(yEdgeSamples);
+                if (yFit.IsValid)
+                {
+                    fwhmY = yFit.Widths;
+                    plotLeftY = yFit.LeftAtCenter;
+                    plotRightY = yFit.RightAtCenter;
+                }
+            }
+
+            double meanX = fwhmX.Length > 0 ? Math.Round(RobustAverage(fwhmX), 3) : 0;
             double stdX = Math.Round(StdDev(fwhmX), 4);
-            double meanY = fwhmY.Length > 0 ? Math.Round(fwhmY.Average(), 3) : 0;
+            double meanY = fwhmY.Length > 0 ? Math.Round(RobustAverage(fwhmY), 3) : 0;
             double stdY = Math.Round(StdDev(fwhmY), 4);
+            double uncX = Math.Round(EstimateFieldSizeUncertainty(fwhmX, stepX), 4);
+            double uncY = Math.Round(EstimateFieldSizeUncertainty(fwhmY, stepY), 4);
 
-            double coverage = Math.Round(plateauX * plateauY, 2);
+            double targetX = TryReadTargetSize(TargetSizeXBox.Text, 0);
+            double targetY = TryReadTargetSize(TargetSizeYBox.Text, 0);
+            double tolerance = CalculateFieldTolerance(targetX, targetY);
+            double deltaX = Math.Round(meanX - targetX, 3);
+            double deltaY = Math.Round(meanY - targetY, 3);
+            bool passX = Math.Abs(deltaX) + uncX <= tolerance;
+            bool passY = Math.Abs(deltaY) + uncY <= tolerance;
+
+            double coverage = Math.Round(meanX * meanY, 2);
             if (ResultText != null)
             {
-                ResultText.Text = $"FWHM X = {meanX:F3} ± {stdX:F4} mm\n" +
-                                  $"FWHM Y = {meanY:F3} ± {stdY:F4} mm\n" +
-                                  $"Coverage = {coverage:F2} mm²\n" +
-                                  $"Method = {method}";
+                ResultText.Text = $"FWHM X = {meanX:F3} +/- {stdX:F4} mm\n" +
+                                  $"FWHM Y = {meanY:F3} +/- {stdY:F4} mm\n" +
+                                  $"Tolerance = +/- {tolerance:F2} mm\n" +
+                                  $"Method = {methodLabel}";
             }
 
             _lastFwhmX = meanX; _lastStdX = stdX;
             _lastFwhmY = meanY; _lastStdY = stdY;
+            _lastUncertaintyX = uncX; _lastUncertaintyY = uncY;
             _lastCoverage = coverage;
-            _lastMethod = method;
+            _lastMethod = methodLabel;
             _lastPlateauX = plateauX; _lastPlateauY = plateauY;
+            _lastTolerance = tolerance;
+            _lastDeltaX = deltaX; _lastDeltaY = deltaY;
+            _lastPassX = passX; _lastPassY = passY;
 
-            if (leftX.Length > 0 && rightX.Length > 0)
-                PlotProfiles(XPlot, xCoords, xProfiles, leftX.Average(), rightX.Average(), method, "XX Profile", meanX, stdX, plateauX / 2.0);
+            if (leftX.Count > 0 && rightX.Count > 0)
+                PlotProfiles(XPlot, xCoords, xProfiles, plotLeftX, plotRightX, methodLabel, "XX Profile", meanX, uncX, plateauX / 2.0, knownHalfDose);
             
-            if (leftY.Length > 0 && rightY.Length > 0)
-                PlotProfiles(YPlot, yCoords, yProfiles, leftY.Average(), rightY.Average(), method, "YY Profile", meanY, stdY, plateauY / 2.0);
+            if (leftY.Count > 0 && rightY.Count > 0)
+                PlotProfiles(YPlot, yCoords, yProfiles, plotLeftY, plotRightY, methodLabel, "YY Profile", meanY, uncY, plateauY / 2.0, knownHalfDose);
 
             // Update the image to a Jet colormap if calibration is active
             UpdateJetHeatmap();
@@ -452,6 +651,271 @@ namespace OpticalDose
             return idx.Length == 0 ? profile : idx.Select(i => profile[i]).ToArray();
         }
 
+        private readonly struct FwhmEdgeResult
+        {
+            public FwhmEdgeResult(double left, double right, bool isValid)
+            {
+                Left = left;
+                Right = right;
+                IsValid = isValid;
+            }
+
+            public double Left { get; }
+            public double Right { get; }
+            public bool IsValid { get; }
+        }
+
+        private readonly struct EdgeSample
+        {
+            public EdgeSample(double offset, double left, double right)
+            {
+                Offset = offset;
+                Left = left;
+                Right = right;
+            }
+
+            public double Offset { get; }
+            public double Left { get; }
+            public double Right { get; }
+            public double Width => Math.Abs(Right - Left);
+        }
+
+        private readonly struct EdgeFitResult
+        {
+            public EdgeFitResult(double leftAtCenter, double rightAtCenter, double[] widths, bool isValid)
+            {
+                LeftAtCenter = leftAtCenter;
+                RightAtCenter = rightAtCenter;
+                Widths = widths;
+                IsValid = isValid;
+            }
+
+            public double LeftAtCenter { get; }
+            public double RightAtCenter { get; }
+            public double[] Widths { get; }
+            public bool IsValid { get; }
+        }
+
+        private static EdgeFitResult FitMultiProfileEdges(IReadOnlyList<EdgeSample> samples)
+        {
+            if (samples == null || samples.Count < 3)
+                return new EdgeFitResult(0, 0, Array.Empty<double>(), false);
+
+            var accepted = RejectWidthOutliers(samples);
+            if (accepted.Count < 3)
+                accepted = samples.ToList();
+
+            var leftLine = FitLine(accepted.Select(s => s.Offset).ToArray(), accepted.Select(s => s.Left).ToArray());
+            var rightLine = FitLine(accepted.Select(s => s.Offset).ToArray(), accepted.Select(s => s.Right).ToArray());
+            if (!leftLine.IsValid || !rightLine.IsValid)
+                return new EdgeFitResult(0, 0, Array.Empty<double>(), false);
+
+            accepted = RejectLineResidualOutliers(accepted, leftLine.Slope, leftLine.Intercept, rightLine.Slope, rightLine.Intercept);
+            if (accepted.Count >= 3)
+            {
+                leftLine = FitLine(accepted.Select(s => s.Offset).ToArray(), accepted.Select(s => s.Left).ToArray());
+                rightLine = FitLine(accepted.Select(s => s.Offset).ToArray(), accepted.Select(s => s.Right).ToArray());
+            }
+
+            if (!leftLine.IsValid || !rightLine.IsValid)
+                return new EdgeFitResult(0, 0, Array.Empty<double>(), false);
+
+            double leftAtCenter = leftLine.Intercept;
+            double rightAtCenter = rightLine.Intercept;
+            var fittedWidths = accepted
+                .Select(s => (rightLine.Slope * s.Offset + rightLine.Intercept) - (leftLine.Slope * s.Offset + leftLine.Intercept))
+                .Where(w => double.IsFinite(w) && w > 0)
+                .ToArray();
+
+            return fittedWidths.Length > 0
+                ? new EdgeFitResult(leftAtCenter, rightAtCenter, fittedWidths, true)
+                : new EdgeFitResult(0, 0, Array.Empty<double>(), false);
+        }
+
+        private static List<EdgeSample> RejectWidthOutliers(IReadOnlyList<EdgeSample> samples)
+        {
+            var widths = samples.Select(s => s.Width).Where(double.IsFinite).ToArray();
+            if (widths.Length < 5)
+                return samples.ToList();
+
+            double median = Median(widths);
+            double mad = Median(widths.Select(w => Math.Abs(w - median)).ToArray());
+            double robustSigma = 1.4826 * mad;
+            double limit = Math.Max(0.25, robustSigma * 3.0);
+
+            return samples
+                .Where(s => double.IsFinite(s.Width) && Math.Abs(s.Width - median) <= limit)
+                .ToList();
+        }
+
+        private static List<EdgeSample> RejectLineResidualOutliers(IReadOnlyList<EdgeSample> samples, double leftSlope, double leftIntercept, double rightSlope, double rightIntercept)
+        {
+            if (samples.Count < 5)
+                return samples.ToList();
+
+            var residuals = samples
+                .Select(s =>
+                {
+                    double leftResidual = s.Left - (leftSlope * s.Offset + leftIntercept);
+                    double rightResidual = s.Right - (rightSlope * s.Offset + rightIntercept);
+                    return Math.Sqrt(leftResidual * leftResidual + rightResidual * rightResidual);
+                })
+                .ToArray();
+
+            double median = Median(residuals);
+            double mad = Median(residuals.Select(r => Math.Abs(r - median)).ToArray());
+            double robustSigma = 1.4826 * mad;
+            double limit = Math.Max(0.20, median + robustSigma * 3.0);
+
+            return samples
+                .Zip(residuals, (sample, residual) => new { sample, residual })
+                .Where(x => x.residual <= limit)
+                .Select(x => x.sample)
+                .ToList();
+        }
+
+        private readonly struct LineFitResult
+        {
+            public LineFitResult(double slope, double intercept, bool isValid)
+            {
+                Slope = slope;
+                Intercept = intercept;
+                IsValid = isValid;
+            }
+
+            public double Slope { get; }
+            public double Intercept { get; }
+            public bool IsValid { get; }
+        }
+
+        private static LineFitResult FitLine(double[] x, double[] y)
+        {
+            if (x.Length != y.Length || x.Length < 2)
+                return new LineFitResult(0, 0, false);
+
+            double meanX = x.Average();
+            double meanY = y.Average();
+            double numerator = 0;
+            double denominator = 0;
+
+            for (int i = 0; i < x.Length; i++)
+            {
+                double dx = x[i] - meanX;
+                numerator += dx * (y[i] - meanY);
+                denominator += dx * dx;
+            }
+
+            double slope = denominator > 1e-12 ? numerator / denominator : 0;
+            double intercept = meanY - slope * meanX;
+            bool valid = double.IsFinite(slope) && double.IsFinite(intercept);
+            return new LineFitResult(slope, intercept, valid);
+        }
+
+        private static double Median(double[] values)
+        {
+            if (values == null || values.Length == 0) return 0;
+            var sorted = values.OrderBy(v => v).ToArray();
+            int mid = sorted.Length / 2;
+            return sorted.Length % 2 == 0
+                ? (sorted[mid - 1] + sorted[mid]) / 2.0
+                : sorted[mid];
+        }
+
+        private static FwhmEdgeResult AnalyzeFwhmProfile(double[] profile, double[] coords, double plateauWidth, string method, double? knownHalfDose)
+        {
+            if (profile.Length < 4 || coords.Length != profile.Length)
+                return new FwhmEdgeResult(0, 0, false);
+
+            double[] smoothedProfile = GaussianSmooth1D(profile, 1.5);
+            double[] plateauSlice = GetPlateauSlice(smoothedProfile, coords, plateauWidth, 0.0);
+            double peak = SelectPeak(plateauSlice, method);
+
+            if (!double.IsFinite(peak) || peak <= 1e-9)
+                return new FwhmEdgeResult(0, 0, false);
+
+            double threshold = knownHalfDose ?? peak / 2.0;
+            if (!double.IsFinite(threshold) || threshold <= 0 || threshold >= peak)
+                return new FwhmEdgeResult(0, 0, false);
+
+            int maxIdx = FindPeakIndexNearCenter(smoothedProfile, coords, plateauWidth);
+
+            int idxL = maxIdx;
+            while (idxL > 0 && smoothedProfile[idxL - 1] >= threshold) idxL--;
+            if (idxL <= 0) return new FwhmEdgeResult(0, 0, false);
+            double left = FitLogisticEdge(smoothedProfile, coords, idxL - 1, idxL, threshold, peak);
+
+            int idxR = maxIdx;
+            while (idxR < smoothedProfile.Length - 1 && smoothedProfile[idxR + 1] >= threshold) idxR++;
+            if (idxR >= smoothedProfile.Length - 1) return new FwhmEdgeResult(0, 0, false);
+            double right = FitLogisticEdge(smoothedProfile, coords, idxR, idxR + 1, threshold, peak);
+
+            bool valid = double.IsFinite(left) && double.IsFinite(right) && right > left;
+            return new FwhmEdgeResult(left, right, valid);
+        }
+
+        private static int FindPeakIndexNearCenter(double[] profile, double[] coords, double plateauWidth)
+        {
+            var candidates = Enumerable.Range(0, profile.Length)
+                .Where(i => plateauWidth <= 0 || Math.Abs(coords[i]) <= plateauWidth / 2.0)
+                .ToArray();
+
+            if (candidates.Length == 0)
+                candidates = Enumerable.Range(0, profile.Length).ToArray();
+
+            return candidates
+                .OrderByDescending(i => profile[i])
+                .ThenBy(i => Math.Abs(coords[i]))
+                .First();
+        }
+
+        private static double EstimateProfileBaseline(double[] profile)
+        {
+            if (profile.Length == 0) return 0;
+            int count = Math.Max(1, (int)Math.Ceiling(profile.Length * 0.10));
+            return profile.OrderBy(v => v).Take(count).Average();
+        }
+
+        private static double EstimateFieldSizeUncertainty(double[] measurements, double pixelStepMm)
+        {
+            if (measurements.Length == 0) return 0;
+
+            double repeatabilitySem = measurements.Length > 1
+                ? StdDev(measurements) / Math.Sqrt(measurements.Length)
+                : 0.0;
+
+            double twoEdgeResolution = Math.Sqrt(2.0) * pixelStepMm / Math.Sqrt(12.0);
+            return Math.Sqrt(repeatabilitySem * repeatabilitySem + twoEdgeResolution * twoEdgeResolution);
+        }
+
+        private static double RobustAverage(double[] measurements)
+        {
+            if (measurements.Length == 0) return 0;
+            if (measurements.Length < 5) return measurements.Average();
+
+            var sorted = measurements.OrderBy(v => v).ToArray();
+            int trim = Math.Max(1, (int)Math.Floor(sorted.Length * 0.10));
+            int count = sorted.Length - 2 * trim;
+            if (count <= 0) return sorted[sorted.Length / 2];
+
+            return sorted.Skip(trim).Take(count).Average();
+        }
+
+        private static double TryReadTargetSize(string text, double fallback)
+        {
+            return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+                ? Math.Max(0, value)
+                : fallback;
+        }
+
+        private static double CalculateFieldTolerance(double targetX, double targetY)
+        {
+            double narrowSide = Math.Min(targetX > 0 ? targetX : double.MaxValue, targetY > 0 ? targetY : double.MaxValue);
+            if (double.IsInfinity(narrowSide) || narrowSide == double.MaxValue)
+                return 0.20;
+
+            return Math.Round(Math.Max(0.05, narrowSide / 100.0), 2);
+        }
+
         private static double SelectPeak(double[] values, string method)
         {
             if (values == null || values.Length == 0) return 0;
@@ -461,6 +925,14 @@ namespace OpticalDose
                 "median" => values.OrderBy(v => v).ElementAt(values.Length / 2),
                 _ => values.Max()
             };
+        }
+
+        private static string FormatMethodLabel(string method, double? knownFullDose)
+        {
+            if (method == "known dose" && knownFullDose.HasValue)
+                return $"Known Dose Edge Fit ({knownFullDose.Value:F3} full, {knownFullDose.Value / 2.0:F3} half)";
+
+            return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(method);
         }
 
         private static double InterpolateEdge(double[] profile, double[] coords, int idx1, int idx2, double threshold)
@@ -478,8 +950,19 @@ namespace OpticalDose
 
         private static double FitLogisticEdge(double[] profile, double[] coords, int idx1, int idx2, double threshold, double peak)
         {
+            return FitLogisticEdge(profile, coords, idx1, idx2, threshold, 0.0, peak);
+        }
+
+        private static double FitLogisticEdge(double[] profile, double[] coords, int idx1, int idx2, double threshold, double baseline, double peak)
+        {
             double lowerBound = peak * 0.20;
             double upperBound = peak * 0.80;
+            double signal = peak - baseline;
+            if (signal > 0)
+            {
+                lowerBound = baseline + signal * 0.20;
+                upperBound = baseline + signal * 0.80;
+            }
 
             var xPoints = new System.Collections.Generic.List<double>();
             var yLogits = new System.Collections.Generic.List<double>();
@@ -498,7 +981,7 @@ namespace OpticalDose
                 double val = profile[i];
                 if (val >= lowerBound && val <= upperBound)
                 {
-                    double ratio = val / peak;
+                    double ratio = signal > 0 ? (val - baseline) / signal : val / peak;
                     ratio = Math.Clamp(ratio, 0.01, 0.99);
                     double logit = Math.Log(ratio / (1.0 - ratio));
                     xPoints.Add(coords[i]);
@@ -519,7 +1002,12 @@ namespace OpticalDose
 
                 if (Math.Abs(a) < 1e-12) return InterpolateEdge(profile, coords, idx1, idx2, threshold);
 
-                return -b / a;
+                double targetRatio = signal > 0 ? (threshold - baseline) / signal : threshold / peak;
+                if (targetRatio <= 0 || targetRatio >= 1 || !double.IsFinite(targetRatio))
+                    return InterpolateEdge(profile, coords, idx1, idx2, threshold);
+
+                double targetLogit = Math.Log(targetRatio / (1.0 - targetRatio));
+                return (targetLogit - b) / a;
             }
             catch
             {
@@ -529,7 +1017,8 @@ namespace OpticalDose
 
         private static double[] GaussianSmooth1D(double[] data, double sigma)
         {
-            if (data == null || data.Length == 0 || sigma <= 0) return data;
+            if (data == null || data.Length == 0) return Array.Empty<double>();
+            if (sigma <= 0) return data;
             
             int radius = (int)Math.Ceiling(3 * sigma);
             int length = data.Length;
@@ -568,7 +1057,7 @@ namespace OpticalDose
             return Math.Sqrt(variance);
         }
 
-        private static void PlotProfiles(WpfPlot plot, double[] coords, double[][] profiles, double leftEdge, double rightEdge, string method, string title, double mean, double std, double plateauHalfWidth)
+        private static void PlotProfiles(WpfPlot plot, double[] coords, double[][] profiles, double leftEdge, double rightEdge, string method, string title, double mean, double std, double plateauHalfWidth, double? thresholdOverride)
         {
             var plt = plot.Plot;
             plt.Clear();
@@ -619,12 +1108,12 @@ namespace OpticalDose
 
             // Add threshold and edge markers
             double maxVal = meanProfile.Any() ? meanProfile.Max() : 1.0;
-            double threshold = maxVal / 2.0;
+            double threshold = thresholdOverride ?? maxVal / 2.0;
 
             var hLine = plt.Add.HorizontalLine(threshold);
             hLine.LineStyle.Color = ScottPlot.Colors.Black;
             hLine.LineStyle.Pattern = ScottPlot.LinePattern.Dashed;
-            hLine.LegendText = "50%";
+            hLine.LegendText = thresholdOverride.HasValue ? "Known half dose" : "50%";
 
             var vLineL = plt.Add.VerticalLine(leftEdge);
             vLineL.LineStyle.Color = ScottPlot.Colors.Red;
@@ -636,7 +1125,7 @@ namespace OpticalDose
             vLineR.LineStyle.Pattern = ScottPlot.LinePattern.Dashed;
             vLineR.LegendText = "Right";
 
-            plt.Title($"{title} | FWHM = {mean:F3} ± {std:F4} mm ({method})");
+            plt.Title($"{title} | FWHM = {mean:F3} +/- {std:F4} mm ({method})");
             plt.XLabel("Distance (mm)");
             plt.YLabel("Dose");
             plt.Axes.AutoScale();
@@ -698,6 +1187,10 @@ namespace OpticalDose
                 AddRow("FWHM X (mm)", $"{_lastFwhmX:F3} ± {_lastStdX:F4}");
                 AddRow("FWHM Y (mm)", $"{_lastFwhmY:F3} ± {_lastStdY:F4}");
                 AddRow("Coverage (mm²)", $"{_lastCoverage:F2}");
+                AddRow("Uncertainty X (mm)", $"{_lastUncertaintyX:F4}");
+                AddRow("Uncertainty Y (mm)", $"{_lastUncertaintyY:F4}");
+                AddRow("Delta X/Y (mm)", $"X {_lastDeltaX:+0.000;-0.000;0.000}, Y {_lastDeltaY:+0.000;-0.000;0.000}");
+                AddRow("Tolerance (mm)", $"+/- {_lastTolerance:F2} ({(_lastPassX && _lastPassY ? "PASS" : "CHECK")})");
                 doc.Blocks.Add(info);
 
                 // Plots
@@ -744,10 +1237,11 @@ namespace OpticalDose
         private double[,]? _activeExtractMap;
         private BitmapSource? _originalImageSource;
         private double[]? _quickCalCoeffs; // Stored calibration curve coefficients (degree 2)
+        private double? _quickCalFullDose;
 
-        private void Extract0MU_Click(object sender, RoutedEventArgs e) => ExtractROI(QD0Box);
-        private void Extract300MU_Click(object sender, RoutedEventArgs e) => ExtractROI(QD300Box);
-        private void Extract600MU_Click(object sender, RoutedEventArgs e) => ExtractROI(QD600Box);
+        private void ExtractPoint1_Click(object sender, RoutedEventArgs e) => ExtractROI(QD0Box);
+        private void ExtractPoint2_Click(object sender, RoutedEventArgs e) => ExtractROI(QD300Box);
+        private void ExtractPoint3_Click(object sender, RoutedEventArgs e) => ExtractROI(QD600Box);
 
         private void ExtractROI(System.Windows.Controls.TextBox targetBox)
         {
@@ -902,17 +1396,14 @@ namespace OpticalDose
                         }
                     }
 
-                    if (_originalImageSource == null) _originalImageSource = FilmImage.Source as BitmapSource;
-                    
                     _activeExtractMap = channel;
                     FilmImage.Source = bmp;
                     FilmImage.Width = w;
                     FilmImage.Height = h;
+                    ResetTargetForCurrentImage();
                     
-                    if (StatusText != null) StatusText.Text = $"Cal scan loaded ({w}x{h}). Position target and Extract.";
-                    
-                    if (TargetRect.Visibility != Visibility.Visible)
-                        ApplyReticleSize_Click(null, null);
+                    if (StatusText != null) StatusText.Text = $"Calibration scan loaded ({w}x{h}). Position the target over each patch and extract OD.";
+                    if (ImageStatusText != null) ImageStatusText.Text = "Calibration scan is displayed for OD extraction. Load an analysis film on the Analyze tab when calibration is done.";
                 }
                 catch (Exception ex)
                 {
@@ -952,6 +1443,11 @@ namespace OpticalDose
                 FilmImage.Height = _doseMap.GetLength(0);
                 if (StatusText != null) StatusText.Text = "Original image restored.";
             }
+        }
+
+        private void SyncMainFilmButton_Click(object sender, RoutedEventArgs e)
+        {
+            TrySyncAnalysisFilmFromMain(true);
         }
 
         /// <summary>
@@ -1040,18 +1536,19 @@ namespace OpticalDose
 
                     // Replace _doseMap with the new film data
                     _doseMap = newMap;
+                    _hasAnalysisFilm = true;
 
                     _originalImageSource = bmp;
                     _activeExtractMap = null;
                     FilmImage.Source = bmp;
                     FilmImage.Width = w;
                     FilmImage.Height = h;
+                    _analysisImageName = System.IO.Path.GetFileName(dlg.FileName);
+                    ResetTargetForCurrentImage();
+                    RefreshAnalysisImageStatus();
                     
                     string calStatus = _quickCalCoeffs != null ? " Cal curve ready." : "";
-                    if (StatusText != null) StatusText.Text = $"Analysis film loaded ({w}x{h}).{calStatus}";
-                    
-                    if (TargetRect.Visibility != Visibility.Visible)
-                        ApplyReticleSize_Click(null, null);
+                    if (StatusText != null) StatusText.Text = $"Analysis film loaded ({w}x{h}).{calStatus} Align the target and run field size analysis.";
                 }
                 catch (Exception ex)
                 {
@@ -1074,13 +1571,27 @@ namespace OpticalDose
                 return;
             }
 
+            if (!double.TryParse(QD0DoseBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double dose0) ||
+                !double.TryParse(QD300DoseBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double dose300) ||
+                !double.TryParse(QD600DoseBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double dose600))
+            {
+                System.Windows.MessageBox.Show("Please ensure all three dose/MU values are filled with valid numbers.", "Invalid Input", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+
+            if (Math.Abs(dose0 - dose300) < 1e-9 || Math.Abs(dose0 - dose600) < 1e-9 || Math.Abs(dose300 - dose600) < 1e-9)
+            {
+                System.Windows.MessageBox.Show("Each calibration point needs a unique dose/MU value.", "Invalid Calibration Points", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+
             if (od0 >= od300 || od300 >= od600)
             {
                 var result = System.Windows.MessageBox.Show(
                     $"Warning: OD values should increase with dose.\n\n" +
-                    $"  0 MU OD   = {od0:F6}\n" +
-                    $"  300 MU OD = {od300:F6}\n" +
-                    $"  600 MU OD = {od600:F6}\n\n" +
+                    $"  {dose0:F1} OD = {od0:F6}\n" +
+                    $"  {dose300:F1} OD = {od300:F6}\n" +
+                    $"  {dose600:F1} OD = {od600:F6}\n\n" +
                     $"These values appear out of order. Continue anyway?",
                     "OD Order Check", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
                 if (result != System.Windows.MessageBoxResult.Yes) return;
@@ -1089,20 +1600,36 @@ namespace OpticalDose
             try
             {
                 double[] xVals = { od0, od300, od600 };
-                double[] yVals = { 0.0, 300.0, 600.0 };
+                double[] yVals = { dose0, dose300, dose600 };
                 
                 _quickCalCoeffs = FittingMath.PolyFit(xVals, yVals, 2);
+                _quickCalFullDose = yVals.Max();
+                if (KnownFullDoseBox != null)
+                    KnownFullDoseBox.Text = _quickCalFullDose.Value.ToString("F3", CultureInfo.InvariantCulture);
+                UpdateKnownDosePreview();
+
+                foreach (ComboBoxItem item in MethodBox.Items)
+                {
+                    if (item.Content?.ToString() == "Known Dose")
+                    {
+                        MethodBox.SelectedItem = item;
+                        break;
+                    }
+                }
 
                 string info = $"Calibration curve created!\n\n" +
                               $"Dose = {_quickCalCoeffs[0]:F4}·OD² + {_quickCalCoeffs[1]:F4}·OD + {_quickCalCoeffs[2]:F4}\n\n" +
                               $"Verification:\n" +
-                              $"  f({od0:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od0):F1} (expect 0)\n" +
-                              $"  f({od300:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od300):F1} (expect 300)\n" +
-                              $"  f({od600:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od600):F1} (expect 600)\n\n" +
-                              $"Now load your analysis film and hit Recalculate.";
+                              $"  f({od0:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od0):F1} (expect {dose0:F1})\n" +
+                              $"  f({od300:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od300):F1} (expect {dose300:F1})\n" +
+                              $"  f({od600:F4}) = {FittingMath.PolyVal(_quickCalCoeffs, od600):F1} (expect {dose600:F1})\n\n" +
+                              $"Known Dose analysis will use {_quickCalFullDose.Value:F3} full dose and {_quickCalFullDose.Value / 2.0:F3} half-dose threshold.\n\n" +
+                              $"Now load your analysis film and run analysis.";
                 
                 if (CalStatusText != null) CalStatusText.Text = $"✓ {_quickCalCoeffs[0]:F2}·OD² + {_quickCalCoeffs[1]:F2}·OD + {_quickCalCoeffs[2]:F2}";
-                if (StatusText != null) StatusText.Text = "Calibration saved. Load film & Recalculate.";
+                if (StatusText != null) StatusText.Text = "Calibration saved. Load the analysis film, align the target, and run analysis.";
+                RefreshAnalysisImageStatus();
+                if (WorkflowTabs != null) WorkflowTabs.SelectedIndex = 1;
                 
                 System.Windows.MessageBox.Show(info, "Calibration Created", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
             }
@@ -1154,6 +1681,7 @@ namespace OpticalDose
             FilmImage.Source = bmp;
             FilmImage.Width = w;
             FilmImage.Height = h;
+            UpdateOverlayVisualScale();
         }
         #endregion
 

@@ -53,6 +53,7 @@ namespace OpticalDose
         private bool _isCropping = false;
         private bool _isROIFiltering = false;
         public AppSettings _settings = new AppSettings();
+        private FieldSizeWindow? _fieldSizeWindow;
 
         // Measurement State
         private enum MeasurementMode { None, ROIDose, Distance, Area, Crosshairs }
@@ -1070,12 +1071,37 @@ namespace OpticalDose
         {
             try
             {
-                var dlg = new FieldSizeWindow(_doseMap ?? _redChannel, _dpiX, _settings, MainDisplayImage.Source as BitmapSource)
+                if (_fieldSizeWindow != null)
+                {
+                    if (_fieldSizeWindow.WindowState == WindowState.Minimized)
+                        _fieldSizeWindow.WindowState = WindowState.Normal;
+
+                    _fieldSizeWindow.Activate();
+                    return;
+                }
+
+                var dlg = new FieldSizeWindow(
+                    _doseMap ?? _redChannel,
+                    _dpiX,
+                    _settings,
+                    MainDisplayImage.Source as BitmapSource,
+                    () => (
+                        _doseMap ?? _redChannel,
+                        _dpiX,
+                        MainDisplayImage.Source as BitmapSource,
+                        _activeFilmFileName != "None"
+                            ? System.IO.Path.GetFileName(_activeFilmFileName)
+                            : "Main window image"))
                 {
                     Owner = this
                 };
-                dlg.ShowDialog();
-                SaveSettings();
+                _fieldSizeWindow = dlg;
+                dlg.Closed += (_, _) =>
+                {
+                    _fieldSizeWindow = null;
+                    SaveSettings();
+                };
+                dlg.Show();
             }
             catch (Exception ex)
             {
@@ -1653,6 +1679,8 @@ namespace OpticalDose
             var newRed = new double[newH, newW];
             var newGreen = new double[newH, newW];
             var newBlue = new double[newH, newW];
+            double[,]? sourceDoseMap = _doseMap;
+            double[,]? newDoseMap = sourceDoseMap != null ? new double[newH, newW] : null;
 
             await Task.Run(() =>
             {
@@ -1688,6 +1716,8 @@ namespace OpticalDose
                             newRed[outRow, outCol] = w00 * _redChannel[r0, c0] + w10 * _redChannel[r0, c1] + w01 * _redChannel[r1, c0] + w11 * _redChannel[r1, c1];
                             newGreen[outRow, outCol] = w00 * _greenChannel[r0, c0] + w10 * _greenChannel[r0, c1] + w01 * _greenChannel[r1, c0] + w11 * _greenChannel[r1, c1];
                             newBlue[outRow, outCol] = w00 * _blueChannel[r0, c0] + w10 * _blueChannel[r0, c1] + w01 * _blueChannel[r1, c0] + w11 * _blueChannel[r1, c1];
+                            if (sourceDoseMap != null && newDoseMap != null)
+                                newDoseMap[outRow, outCol] = w00 * sourceDoseMap[r0, c0] + w10 * sourceDoseMap[r0, c1] + w01 * sourceDoseMap[r1, c0] + w11 * sourceDoseMap[r1, c1];
                         }
                     }
                 });
@@ -1697,6 +1727,11 @@ namespace OpticalDose
             _redChannel = newRed;
             _greenChannel = newGreen;
             _blueChannel = newBlue;
+            if (newDoseMap != null)
+            {
+                _doseMap = newDoseMap;
+                _filmDoseMap = newDoseMap;
+            }
             _imgWidth = newW;
             _imgHeight = newH;
             
