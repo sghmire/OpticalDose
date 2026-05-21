@@ -1,10 +1,29 @@
 # Optical Dose
 
-Optical Dose is a Windows desktop application for radiochromic film dosimetry, DICOM RT dose review, and planar dose comparison. It brings film calibration, TIFF film processing, RTDOSE/RTSTRUCT/RTPLAN visualization, gamma analysis, field-size checks, and star-shot QA into one WPF workflow.
+[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+[![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://learn.microsoft.com/dotnet/desktop/wpf/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-The project is built for researchers, physicists, developers, and QA teams who want a transparent, inspectable toolchain for optical film dose analysis.
+Optical Dose is a Windows desktop application for radiochromic film dosimetry, DICOM RT dose review, and planar dose comparison. It brings film calibration, TIFF film processing, RTDOSE/RTSTRUCT/RTPLAN visualization, gamma analysis, field-size checks, and star-shot QA into one polished WPF workflow.
+
+It is built for researchers, physicists, developers, and QA teams who want a transparent, inspectable toolchain for optical film dose analysis.
+
+<p align="center">
+  <img src="screen/main.gif" alt="Optical Dose workflow preview" width="900">
+</p>
 
 > Clinical safety note: Optical Dose is research and QA software. It must be independently commissioned, validated, and reviewed before any clinical use. Always verify calibration, scanner behavior, dose scaling, DICOM orientation, gamma settings, and report outputs against your local procedures and reference datasets.
+
+## Why Optical Dose?
+
+Film dosimetry work often jumps between separate image tools, spreadsheets, DICOM viewers, scripts, and reporting templates. Optical Dose pulls the practical pieces into one desktop app:
+
+- Film scan processing and dose conversion.
+- DICOM RT dose review and plane extraction.
+- Measured-vs-planned dose comparison.
+- Gamma analysis with profiles and ROI handling.
+- Field-size and star-shot QA tools.
+- Printable reports for QA documentation.
 
 ## Highlights
 
@@ -20,7 +39,35 @@ The project is built for researchers, physicists, developers, and QA teams who w
 - Perform FWHM field-size analysis.
 - Perform star-shot isocenter QA and generate printable reports.
 
-## Screens And Workflows
+## Screenshot Tour
+
+### Film Calibration And Image Processing
+
+Load a film scan, inspect dose response, apply alignment/crop tools, build calibration fits, and convert optical response to dose.
+
+![Optical Dose main application](screen/MainApp.png)
+
+### DICOM Plane Extraction
+
+Navigate RTDOSE data in axial, coronal, and sagittal views, inspect dose and coordinates, then extract a comparison plane.
+
+![DICOM plane extraction](screen/DicomPlaneExtraction.png)
+
+### Gamma Analysis
+
+Compare measured film dose against planned DICOM dose with spatial shifts, gamma criteria, profile sampling, and pass-rate visualization.
+
+![Gamma analysis](screen/Gamma%20Analysis.png)
+
+### QA Tools
+
+Field-size and star-shot analysis tools are included for common film-based QA checks.
+
+| Field Size | Star Shot |
+| --- | --- |
+| ![Field-size analysis](screen/FieldSize.png) | ![Star-shot analysis](screen/StarShot.png) |
+
+## Core Workflows
 
 Optical Dose is organized around three core workflows:
 
@@ -97,6 +144,13 @@ You can also open [OpticalDose.sln](OpticalDose.sln) in Visual Studio and run th
 |-- StructureSet.cs
 |-- Icon.png
 |-- SamplePlane.dcm
+|-- screen/
+    |-- main.gif
+    |-- MainApp.png
+    |-- DicomPlaneExtraction.png
+    |-- Gamma Analysis.png
+    |-- FieldSize.png
+    |-- StarShot.png
 ```
 
 Generated build output lives under `bin/` and `obj/`. These folders can be recreated by building the project and should not be treated as source.
